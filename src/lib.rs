@@ -138,9 +138,15 @@ pub fn none_of<'input, 'b>(s: &'b str) -> impl Parser<'input, char> + 'b {
     move |input: &'input str| one_none_of_impl(s, |a, c| !a.contains(c)).parse(input)
 }
 
-pub fn tag<'input, 'b>(s: &'b str) -> impl Parser<'input, &'input str> + 'b {
+pub fn tag_no_case_impl<'input, 'b, P: 'b>(
+    s: &'b str,
+    cmp: P,
+) -> impl Parser<'input, &'input str> + 'b
+where
+    P: Fn(&str, &str) -> bool,
+{
     move |input: &'input str| match input.get(..s.len()) {
-        Some(m) if m == s => Ok((&input[m.len()..], &input[..m.len()])),
+        Some(m) if cmp(m, s) => Ok((&input[m.len()..], &input[..m.len()])),
         Some(m) => Err(ParseError::Unexpected {
             input,
             expected: s.to_owned(),
@@ -150,6 +156,42 @@ pub fn tag<'input, 'b>(s: &'b str) -> impl Parser<'input, &'input str> + 'b {
             input,
             expected: s.to_owned(),
         }),
+    }
+}
+
+pub fn tag<'input, 'b>(s: &'b str) -> impl Parser<'input, &'input str> + 'b {
+    move |input: &'input str| tag_no_case_impl(s, str::eq).parse(input)
+}
+
+pub fn tag_no_case<'input, 'b>(s: &'b str) -> impl Parser<'input, &'input str> + 'b {
+    move |input: &'input str| {
+        tag_no_case_impl(s, |a, b| a.to_lowercase() == b.to_ascii_lowercase()).parse(input)
+    }
+}
+
+pub fn take<'input>(n: usize) -> impl Parser<'input, &'input str> {
+    move |input: &'input str| match input.get(..n) {
+        Some(m) => Ok((&input[n..], m)),
+        None => Err(ParseError::EarlyEOF {
+            input,
+            expected: format!("{n} length string"),
+        }),
+    }
+}
+
+pub fn take_while<'input, P>(pred: P) -> impl Parser<'input, &'input str>
+where
+    P: Fn(char) -> bool,
+{
+    move |input: &'input str| {
+        let mut i = 0;
+        for c in input.chars() {
+            if !pred(c) {
+                break;
+            }
+            i += 1;
+        }
+        Ok((&input[i..], &input[..i]))
     }
 }
 
@@ -322,6 +364,88 @@ mod tests {
                 expected: "Hello".to_owned()
             })
         );
+    }
+
+    #[test]
+    fn test_tag_no_case() {
+        let hello = |input| tag_no_case("Hello").parse(input);
+
+        assert_eq!(hello("Hello, World!"), Ok((", World!", "Hello")));
+
+        assert_eq!(hello("hello, World!"), Ok((", World!", "hello")));
+
+        assert_eq!(hello("HeLlo, World!"), Ok((", World!", "HeLlo")));
+
+        assert_eq!(
+            hello("Something"),
+            Err(ParseError::Unexpected {
+                input: "Something",
+                expected: "Hello".to_owned(),
+                got: "Somet"
+            })
+        );
+
+        assert_eq!(
+            hello("less"),
+            Err(ParseError::EarlyEOF {
+                input: "less",
+                expected: "Hello".to_owned()
+            })
+        );
+
+        assert_eq!(
+            hello("Hell"),
+            Err(ParseError::EarlyEOF {
+                input: "Hell",
+                expected: "Hello".to_owned()
+            })
+        );
+
+        assert_eq!(
+            hello(""),
+            Err(ParseError::EarlyEOF {
+                input: "",
+                expected: "Hello".to_owned()
+            })
+        );
+    }
+
+    #[test]
+    fn test_take() {
+        let take6 = |input| take(6usize).parse(input);
+
+        assert_eq!(take6("1234567"), Ok(("7", "123456")));
+
+        assert_eq!(take6("things"), Ok(("", "things")));
+
+        assert_eq!(
+            take6("short"),
+            Err(ParseError::EarlyEOF {
+                input: "short",
+                expected: "6 length string".to_owned()
+            })
+        );
+
+        assert_eq!(
+            take6(""),
+            Err(ParseError::EarlyEOF {
+                input: "",
+                expected: "6 length string".to_owned()
+            })
+        );
+    }
+
+    #[test]
+    fn test_take_while() {
+        let alpha = |input| take_while(char::is_alphabetic).parse(input);
+
+        assert_eq!(alpha("latin123"), Ok(("123", "latin")));
+
+        assert_eq!(alpha("12345"), Ok(("12345", "")));
+
+        assert_eq!(alpha("latin"), Ok(("", "latin")));
+
+        assert_eq!(alpha(""), Ok(("", "")));
     }
 }
 
