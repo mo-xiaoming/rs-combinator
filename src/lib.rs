@@ -9,6 +9,10 @@ pub enum ParseError<'input> {
         expected: String,
         got: &'input str,
     },
+    Missing {
+        input: &'input str,
+        expected: String,
+    },
 }
 
 type ParseResult<'input, Output> = Result<(&'input str, Output), ParseError<'input>>;
@@ -192,6 +196,32 @@ where
             i += 1;
         }
         Ok((&input[i..], &input[..i]))
+    }
+}
+
+pub fn take_till<'input, P>(pred: P) -> impl Parser<'input, &'input str>
+where
+    P: Fn(char) -> bool,
+{
+    move |input: &'input str| {
+        let mut i = 0;
+        for c in input.chars() {
+            if pred(c) {
+                break;
+            }
+            i += 1;
+        }
+        Ok((&input[i..], &input[..i]))
+    }
+}
+
+pub fn take_until<'input, 'b>(s: &'b str) -> impl Parser<'input, &'input str> + 'b {
+    move |input: &'input str| match input.find(s) {
+        Some(i) => Ok((&input[i..], &input[..i])),
+        None => Err(ParseError::Missing {
+            input,
+            expected: s.to_owned(),
+        }),
     }
 }
 
@@ -446,6 +476,44 @@ mod tests {
         assert_eq!(alpha("latin"), Ok(("", "latin")));
 
         assert_eq!(alpha(""), Ok(("", "")));
+    }
+
+    #[test]
+    fn test_take_till() {
+        let till_colon = |input| take_till(|c| c == ':').parse(input);
+
+        assert_eq!(till_colon("latin:123"), Ok((":123", "latin")));
+
+        assert_eq!(till_colon(":empty matched"), Ok((":empty matched", "")));
+
+        assert_eq!(till_colon("12345"), Ok(("", "12345")));
+
+        assert_eq!(till_colon(""), Ok(("", "")));
+    }
+
+    #[test]
+    fn test_take_until() {
+        let until_eof = |input| take_until("eof").parse(input);
+
+        assert_eq!(until_eof("hello, worldeof"), Ok(("eof", "hello, world")));
+
+        assert_eq!(
+            until_eof("hello, world"),
+            Err(ParseError::Missing {
+                input: "hello, world",
+                expected: "eof".to_owned()
+            })
+        );
+
+        assert_eq!(
+            until_eof(""),
+            Err(ParseError::Missing {
+                input: "",
+                expected: "eof".to_owned()
+            })
+        );
+
+        assert_eq!(until_eof("1eof2eof"), Ok(("eof2eof", "1")));
     }
 }
 
