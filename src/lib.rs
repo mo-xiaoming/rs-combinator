@@ -1,6 +1,7 @@
 #[derive(Debug, PartialEq, Eq)]
 pub enum ParseError<'input> {
     EarlyEOF {
+        input: &'input str,
         expected: String,
     },
     Unexpected {
@@ -34,6 +35,7 @@ pub fn char<'input>(c: char) -> impl Parser<'input, char> {
             got: &input[..m.len_utf8()],
         }),
         None => Err(ParseError::EarlyEOF {
+            input,
             expected: c.to_string(),
         }),
     }
@@ -91,6 +93,7 @@ where
                 None => {
                     if it == input {
                         return Err(ParseError::EarlyEOF {
+                            input,
                             expected: s.to_owned(),
                         });
                     }
@@ -122,6 +125,7 @@ where
             got: &input[..m.len_utf8()],
         }),
         None => Err(ParseError::EarlyEOF {
+            input,
             expected: s.to_owned(),
         }),
     }
@@ -132,6 +136,21 @@ pub fn one_of<'input, 'b>(s: &'b str) -> impl Parser<'input, char> + 'b {
 
 pub fn none_of<'input, 'b>(s: &'b str) -> impl Parser<'input, char> + 'b {
     move |input: &'input str| one_none_of_impl(s, |a, c| !a.contains(c)).parse(input)
+}
+
+pub fn tag<'input, 'b>(s: &'b str) -> impl Parser<'input, &'input str> + 'b {
+    move |input: &'input str| match input.get(..s.len()) {
+        Some(m) if m == s => Ok((&input[m.len()..], &input[..m.len()])),
+        Some(m) => Err(ParseError::Unexpected {
+            input,
+            expected: s.to_owned(),
+            got: m,
+        }),
+        None => Err(ParseError::EarlyEOF {
+            input,
+            expected: s.to_owned(),
+        }),
+    }
 }
 
 #[cfg(test)]
@@ -187,6 +206,7 @@ mod tests {
         assert_eq!(
             hex(""),
             Err(ParseError::EarlyEOF {
+                input: "",
                 expected: "1234567890ABCDEF".to_owned()
             })
         );
@@ -214,6 +234,7 @@ mod tests {
         assert_eq!(
             not_space(""),
             Err(ParseError::EarlyEOF {
+                input: "",
                 expected: " \t\r\n".to_owned()
             })
         );
@@ -235,6 +256,7 @@ mod tests {
         assert_eq!(
             one_of("a").parse(""),
             Err(ParseError::EarlyEOF {
+                input: "",
                 expected: "a".to_owned()
             })
         );
@@ -256,7 +278,48 @@ mod tests {
         assert_eq!(
             none_of("a").parse(""),
             Err(ParseError::EarlyEOF {
+                input: "",
                 expected: "a".to_owned()
+            })
+        );
+    }
+
+    #[test]
+    fn test_tag() {
+        let hello = |input| tag("Hello").parse(input);
+
+        assert_eq!(hello("Hello, World!"), Ok((", World!", "Hello")));
+
+        assert_eq!(
+            hello("Something"),
+            Err(ParseError::Unexpected {
+                input: "Something",
+                expected: "Hello".to_owned(),
+                got: "Somet"
+            })
+        );
+
+        assert_eq!(
+            hello("less"),
+            Err(ParseError::EarlyEOF {
+                input: "less",
+                expected: "Hello".to_owned()
+            })
+        );
+
+        assert_eq!(
+            hello("Hell"),
+            Err(ParseError::EarlyEOF {
+                input: "Hell",
+                expected: "Hello".to_owned()
+            })
+        );
+
+        assert_eq!(
+            hello(""),
+            Err(ParseError::EarlyEOF {
+                input: "",
+                expected: "Hello".to_owned()
             })
         );
     }
