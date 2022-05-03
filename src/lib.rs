@@ -1,33 +1,33 @@
 #[derive(Debug, PartialEq, Eq)]
-pub enum ParseError<'a> {
+pub enum ParseError<'input> {
     EarlyEOF {
-        input: &'a str,
+        input: &'input str,
         expected: String,
     },
     Unexpected {
-        input: &'a str,
+        input: &'input str,
         expected: String,
-        got: &'a str,
+        got: &'input str,
     },
 }
 
-type ParseResult<'a, Output> = Result<(&'a str, Output), ParseError<'a>>;
+type ParseResult<'input, Output> = Result<(&'input str, Output), ParseError<'input>>;
 
-pub trait Parser<'a, Output> {
-    fn parse(&self, input: &'a str) -> ParseResult<'a, Output>;
+pub trait Parser<'input, Output> {
+    fn parse(&self, input: &'input str) -> ParseResult<'input, Output>;
 }
 
-impl<'a, P, Output> Parser<'a, Output> for P
+impl<'input, P, Output> Parser<'input, Output> for P
 where
-    P: Fn(&'a str) -> ParseResult<'a, Output>,
+    P: Fn(&'input str) -> ParseResult<'input, Output>,
 {
-    fn parse(&self, input: &'a str) -> ParseResult<'a, Output> {
+    fn parse(&self, input: &'input str) -> ParseResult<'input, Output> {
         self(input)
     }
 }
 
-pub fn char<'a>(c: char) -> impl Parser<'a, char> {
-    move |input: &'a str| match input.chars().next() {
+pub fn char<'input>(c: char) -> impl Parser<'input, char> {
+    move |input: &'input str| match input.chars().next() {
         Some(m) if m == c => Ok((&input[c.len_utf8()..], c)),
         Some(m) => Err(ParseError::Unexpected {
             input,
@@ -42,8 +42,8 @@ pub fn char<'a>(c: char) -> impl Parser<'a, char> {
 }
 
 /*
-pub fn is_a<'a, 'b>(s: &'b str) -> impl Parser<'a, &'a str> + 'b {
-    move |input: &'a str| {
+pub fn is_a<'input, 'b>(s: &'b str) -> impl Parser<'input, &'input str> + 'b {
+    move |input: &'input str| {
         let mut i = input;
         loop {
             match i.get(..s.len()) {
@@ -70,31 +70,47 @@ pub fn is_a<'a, 'b>(s: &'b str) -> impl Parser<'a, &'a str> + 'b {
 }
  */
 
-pub fn is_a<'a, 'b>(s: &'b str) -> impl Parser<'a, &'a str> + 'b {
-    move |input: &'a str| {
-        let mut i = 0;
+fn char_string_pred<'input, 'b, P: 'b>(s: &'b str, pred: P) -> impl Parser<'input, &'input str> + 'b
+where
+    P: Fn(&'b str, char) -> bool,
+{
+    move |input: &'input str| {
+        let mut it = input;
         loop {
-            match input.chars().next() {
-                Some(m) if s.contains(m) => i += 1,
-                Some(_) => {
-                    if i == 0 {
+            match it.chars().next() {
+                Some(m) if pred(s, m) => it = &it[m.len_utf8()..],
+                Some(m) => {
+                    if it == input {
                         return Err(ParseError::Unexpected {
                             input,
                             expected: s.to_owned(),
-                            got: &input[..i],
+                            got: &input[..m.len_utf8()],
                         });
                     }
-                    return Ok((&input[i..], &input[..i]));
+                    let l = input.len() - it.len();
+                    return Ok((&input[l..], &input[..l]));
                 }
                 None => {
-                    return Err(ParseError::EarlyEOF {
-                        input,
-                        expected: s.to_owned(),
-                    })
+                    if it == input {
+                        return Err(ParseError::EarlyEOF {
+                            input,
+                            expected: s.to_owned(),
+                        });
+                    }
+                    let l = input.len() - it.len();
+                    return Ok((&input[l..], &input[..l]));
                 }
             }
         }
     }
+}
+
+pub fn is_a<'input, 'b>(s: &'b str) -> impl Parser<'input, &'input str> + 'b {
+    move |input: &'input str| char_string_pred(s, str::contains).parse(input)
+}
+
+pub fn is_not<'input, 'b>(s: &'b str) -> impl Parser<'input, &'input str> + 'b {
+    move |input: &'input str| char_string_pred(s, |s, c| !s.contains(c)).parse(input)
 }
 
 #[cfg(test)]
@@ -103,10 +119,12 @@ mod tests {
 
     #[test]
     fn test_char() {
-        assert_eq!(char('a').parse("abc"), Ok(("bc", 'a')));
+        let a = |input| char('a').parse(input);
+
+        assert_eq!(a("abc"), Ok(("bc", 'a')));
 
         assert_eq!(
-            char('a').parse(" abc"),
+            a(" abc"),
             Err(ParseError::Unexpected {
                 input: " abc",
                 expected: String::from("a"),
@@ -115,7 +133,7 @@ mod tests {
         );
 
         assert_eq!(
-            char('a').parse("bc"),
+            a("bc"),
             Err(ParseError::Unexpected {
                 input: "bc",
                 expected: String::from("a"),
@@ -126,31 +144,58 @@ mod tests {
 
     #[test]
     fn test_is_a() {
+        let hex = |input| is_a("1234567890ABCDEF").parse(input);
+
+        assert_eq!(hex("123 and voila"), Ok((" and voila", "123")));
+
+        assert_eq!(hex("DEADBEEF and others"), Ok((" and others", "DEADBEEF")));
+
+        assert_eq!(hex("BADBABEsomething"), Ok(("something", "BADBABE")));
+
+        assert_eq!(hex("D15EA5E"), Ok(("", "D15EA5E")));
+
         assert_eq!(
-            is_a("1234567890ABCDEF").parse("123 and voila"),
-            Ok((" and voila", "123"))
+            hex("xD"),
+            Err(ParseError::Unexpected {
+                input: "xD",
+                expected: "1234567890ABCDEF".to_owned(),
+                got: "x"
+            })
         );
 
         assert_eq!(
-            is_a("1234567890ABCDEF").parse("DEADBEEF and others"),
-            Ok((" and others", "DEADBEEF"))
-        );
-
-        assert_eq!(
-            is_a("1234567890ABCDEF").parse("BADBABEsomething"),
-            Ok(("something", "BADBABE"))
-        );
-
-        assert_eq!(
-            is_a("1234567890ABCDEF").parse("D15EA5E"),
-            Ok(("", "D15EA5E"))
-        );
-
-        assert_eq!(
-            is_a("1234567890ABCDEF").parse(""),
+            hex(""),
             Err(ParseError::EarlyEOF {
                 input: "",
                 expected: "1234567890ABCDEF".to_owned()
+            })
+        );
+    }
+
+    #[test]
+    fn test_is_not() {
+        let not_space = |input| is_not(" \t\r\n").parse(input);
+
+        assert_eq!(not_space("Hello, World!"), Ok((" World!", "Hello,")));
+
+        assert_eq!(not_space("Sometimes\t"), Ok(("\t", "Sometimes")));
+
+        assert_eq!(not_space("Nospace"), Ok(("", "Nospace")));
+
+        assert_eq!(
+            not_space(" N"),
+            Err(ParseError::Unexpected {
+                input: " N",
+                expected: " \t\r\n".to_owned(),
+                got: " "
+            })
+        );
+
+        assert_eq!(
+            not_space(""),
+            Err(ParseError::EarlyEOF {
+                input: "",
+                expected: " \t\r\n".to_owned()
             })
         );
     }

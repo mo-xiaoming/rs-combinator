@@ -2,3 +2,4 @@
 .tags
 flake.lock
 Cargo.lock
+.vscode/
