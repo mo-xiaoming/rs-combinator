@@ -1,3 +1,5 @@
+type Output = String;
+
 #[derive(Debug, PartialEq, Eq)]
 pub enum ParseError<'input> {
     EarlyEOF {
@@ -15,17 +17,17 @@ pub enum ParseError<'input> {
     },
 }
 
-type ParseResult<'input, Output> = Result<(&'input str, Output), ParseError<'input>>;
+type ParseResult<'input> = Result<(&'input str, Output), ParseError<'input>>;
 
-pub trait Parser<'input, Output> {
-    fn parse(&self, input: &'input str) -> ParseResult<'input, Output>;
+pub trait Parser<'input> {
+    fn parse(&self, input: &'input str) -> ParseResult<'input>;
 }
 
-impl<'input, P, Output> Parser<'input, Output> for P
+impl<'input, P> Parser<'input> for P
 where
-    P: Fn(&'input str) -> ParseResult<'input, Output>,
+    P: Fn(&'input str) -> ParseResult<'input>,
 {
-    fn parse(&self, input: &'input str) -> ParseResult<'input, Output> {
+    fn parse(&self, input: &'input str) -> ParseResult<'input> {
         self(input)
     }
 }
