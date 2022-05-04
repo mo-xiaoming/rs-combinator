@@ -192,6 +192,38 @@ pub fn take_until<'input, 'b>(s: &'b str) -> impl Parser<'input> + 'b {
     }
 }
 
+fn digit_alpha_1<'input, P>(pred: P, p: String) -> impl Parser<'input>
+where
+    P: Fn(char) -> bool + Copy,
+{
+    move |input: &'input str| {
+        if input.is_empty() {
+            return Err(ParseError::EarlyEOF { input, expected: p.clone() });
+        }
+        match input.find(pred) {
+            Some(0) => Err(ParseError::Unexpected {
+                input,
+                expected: p.clone(),
+                got: &input[..input.chars().next().unwrap().len_utf8()],
+            }),
+            Some(i) => Ok((&input[i..], (&input[..i]).to_owned())),
+            None => Ok(("", input.to_owned())),
+        }
+    }
+}
+
+pub fn alpha1<'input>() -> impl Parser<'input> {
+    move |input: &'input str| {
+        digit_alpha_1(|c: char| !c.is_ascii_alphabetic(), "[a-zA-Z]".to_owned()).parse(input)
+    }
+}
+
+pub fn digit1<'input>() -> impl Parser<'input> {
+    move |input: &'input str| {
+        digit_alpha_1(|c: char| !c.is_ascii_digit(), "[0-9]".to_owned()).parse(input)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::ParseError;
@@ -498,5 +530,49 @@ mod tests {
         );
 
         assert_eq!(until_eof("1eof2eof"), Ok(("eof2eof", "1".to_owned())));
+    }
+
+    #[test]
+    fn test_alpha1() {
+        assert_eq!(alpha1().parse("aB1c"), Ok(("1c", "aB".to_owned())));
+
+        assert_eq!(
+            alpha1().parse("1c"),
+            Err(ParseError::Unexpected {
+                input: "1c",
+                expected: "[a-zA-Z]".to_owned(),
+                got: "1"
+            })
+        );
+
+        assert_eq!(
+            alpha1().parse(""),
+            Err(ParseError::EarlyEOF {
+                input: "",
+                expected: "[a-zA-Z]".to_owned()
+            })
+        );
+    }
+
+    #[test]
+    fn test_digit1() {
+        assert_eq!(digit1().parse("21c"), Ok(("c", "21".to_owned())));
+
+        assert_eq!(
+            digit1().parse("c1"),
+            Err(ParseError::Unexpected {
+                input: "c1",
+                expected: "[0-9]".to_owned(),
+                got: "c"
+            })
+        );
+
+        assert_eq!(
+            digit1().parse(""),
+            Err(ParseError::EarlyEOF {
+                input: "",
+                expected: "[0-9]".to_owned()
+            })
+        );
     }
 }
