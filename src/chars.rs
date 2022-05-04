@@ -198,7 +198,10 @@ where
 {
     move |input: &'input str| {
         if input.is_empty() {
-            return Err(ParseError::EarlyEOF { input, expected: p.clone() });
+            return Err(ParseError::EarlyEOF {
+                input,
+                expected: p.clone(),
+            });
         }
         match input.find(pred) {
             Some(0) => Err(ParseError::Unexpected {
@@ -221,6 +224,16 @@ pub fn alpha1<'input>() -> impl Parser<'input> {
 pub fn digit1<'input>() -> impl Parser<'input> {
     move |input: &'input str| {
         digit_alpha_1(|c: char| !c.is_ascii_digit(), "[0-9]".to_owned()).parse(input)
+    }
+}
+
+pub fn anychar<'input>() -> impl Parser<'input> {
+    move |input: &'input str| match input.chars().next() {
+        Some(m) => Ok((&input[m.len_utf8()..], m.to_string())),
+        None => Err(ParseError::EarlyEOF {
+            input,
+            expected: ".*".to_owned(),
+        }),
     }
 }
 
@@ -572,6 +585,19 @@ mod tests {
             Err(ParseError::EarlyEOF {
                 input: "",
                 expected: "[0-9]".to_owned()
+            })
+        );
+    }
+
+    #[test]
+    fn test_anychar() {
+        assert_eq!(anychar().parse("abc"), Ok(("bc", "a".to_owned())));
+
+        assert_eq!(
+            anychar().parse(""),
+            Err(ParseError::EarlyEOF {
+                input: "",
+                expected: ".*".to_owned()
             })
         );
     }
