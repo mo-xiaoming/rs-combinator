@@ -1,8 +1,8 @@
 use crate::{ParseError, Parser};
 
-pub fn char<'input>(c: char) -> impl Parser<'input> {
+pub fn char<'input>(c: char) -> impl Parser<'input, char> {
     move |input: &'input str| match input.chars().next() {
-        Some(m) if m == c => Ok((&input[c.len_utf8()..], c.to_string())),
+        Some(m) if m == c => Ok((&input[c.len_utf8()..], c)),
         Some(m) => Err(ParseError::Unexpected {
             input,
             expected: c.to_string(),
@@ -15,36 +15,7 @@ pub fn char<'input>(c: char) -> impl Parser<'input> {
     }
 }
 
-/*
-pub fn is_a<'input, 'b>(s: &'b str) -> impl Parser<'input, &'input str> + 'b {
-    move |input: &'input str| {
-        let mut i = input;
-        loop {
-            match i.get(..s.len()) {
-                Some(m) if m == s => i = &i[s.len()..],
-                Some(m) => {
-                    if i == input {
-                        return Err(ParseError::Unexpected {
-                            input,
-                            expected: s.to_owned(),
-                            got: m,
-                        });
-                    }
-                    return Ok((i, &input[..input.len() - i.len()]));
-                }
-                None => {
-                    return Err(ParseError::EarlyEOF {
-                        input,
-                        expected: s.to_owned(),
-                    })
-                }
-            }
-        }
-    }
-}
- */
-
-fn is_a_not_impl<'input, 'b, P: 'b>(s: &'b str, pred: P) -> impl Parser<'input> + 'b
+fn is_a_not_impl<'input, 'b, P: 'b>(s: &'b str, pred: P) -> impl Parser<'input, &'input str> + 'b
 where
     P: Fn(&'b str, char) -> bool,
 {
@@ -62,7 +33,7 @@ where
                         });
                     }
                     let l = input.len() - it.len();
-                    return Ok((&input[l..], (&input[..l]).to_owned()));
+                    return Ok((&input[l..], &input[..l]));
                 }
                 None => {
                     if it == input {
@@ -72,27 +43,27 @@ where
                         });
                     }
                     let l = input.len() - it.len();
-                    return Ok((&input[l..], (&input[..l]).to_owned()));
+                    return Ok((&input[l..], &input[..l]));
                 }
             }
         }
     }
 }
 
-pub fn is_a<'input, 'b>(s: &'b str) -> impl Parser<'input> + 'b {
+pub fn is_a<'input, 'b>(s: &'b str) -> impl Parser<'input, &'input str> + 'b {
     move |input: &'input str| is_a_not_impl(s, str::contains).parse(input)
 }
 
-pub fn is_not<'input, 'b>(s: &'b str) -> impl Parser<'input> + 'b {
+pub fn is_not<'input, 'b>(s: &'b str) -> impl Parser<'input, &'input str> + 'b {
     move |input: &'input str| is_a_not_impl(s, |a, c| !a.contains(c)).parse(input)
 }
 
-fn one_none_of_impl<'input, 'b, P: 'b>(s: &'b str, pred: P) -> impl Parser<'input> + 'b
+fn one_none_of_impl<'input, 'b, P: 'b>(s: &'b str, pred: P) -> impl Parser<'input, char> + 'b
 where
     P: Fn(&'b str, char) -> bool,
 {
     move |input: &'input str| match input.chars().next() {
-        Some(m) if pred(s, m) => Ok((&input[m.len_utf8()..], m.to_string())),
+        Some(m) if pred(s, m) => Ok((&input[m.len_utf8()..], m)),
         Some(m) => Err(ParseError::Unexpected {
             input,
             expected: s.to_owned(),
@@ -104,20 +75,23 @@ where
         }),
     }
 }
-pub fn one_of<'input, 'b>(s: &'b str) -> impl Parser<'input> + 'b {
+pub fn one_of<'input, 'b>(s: &'b str) -> impl Parser<'input, char> + 'b {
     move |input: &'input str| one_none_of_impl(s, str::contains).parse(input)
 }
 
-pub fn none_of<'input, 'b>(s: &'b str) -> impl Parser<'input> + 'b {
+pub fn none_of<'input, 'b>(s: &'b str) -> impl Parser<'input, char> + 'b {
     move |input: &'input str| one_none_of_impl(s, |a, c| !a.contains(c)).parse(input)
 }
 
-pub fn tag_no_case_impl<'input, 'b, P: 'b>(s: &'b str, cmp: P) -> impl Parser<'input> + 'b
+pub fn tag_no_case_impl<'input, 'b, P: 'b>(
+    s: &'b str,
+    cmp: P,
+) -> impl Parser<'input, &'input str> + 'b
 where
     P: Fn(&str, &str) -> bool,
 {
     move |input: &'input str| match input.get(..s.len()) {
-        Some(m) if cmp(m, s) => Ok((&input[m.len()..], (&input[..m.len()]).to_owned())),
+        Some(m) if cmp(m, s) => Ok((&input[m.len()..], &input[..m.len()])),
         Some(m) => Err(ParseError::Unexpected {
             input,
             expected: s.to_owned(),
@@ -130,19 +104,19 @@ where
     }
 }
 
-pub fn tag<'input, 'b>(s: &'b str) -> impl Parser<'input> + 'b {
+pub fn tag<'input, 'b>(s: &'b str) -> impl Parser<'input, &'input str> + 'b {
     move |input: &'input str| tag_no_case_impl(s, str::eq).parse(input)
 }
 
-pub fn tag_no_case<'input, 'b>(s: &'b str) -> impl Parser<'input> + 'b {
+pub fn tag_no_case<'input, 'b>(s: &'b str) -> impl Parser<'input, &'input str> + 'b {
     move |input: &'input str| {
         tag_no_case_impl(s, |a, b| a.to_lowercase() == b.to_ascii_lowercase()).parse(input)
     }
 }
 
-pub fn take<'input>(n: usize) -> impl Parser<'input> {
+pub fn take<'input>(n: usize) -> impl Parser<'input, &'input str> {
     move |input: &'input str| match input.get(..n) {
-        Some(m) => Ok((&input[n..], m.to_owned())),
+        Some(m) => Ok((&input[n..], m)),
         None => Err(ParseError::EarlyEOF {
             input,
             expected: format!("{n} length string"),
@@ -150,7 +124,7 @@ pub fn take<'input>(n: usize) -> impl Parser<'input> {
     }
 }
 
-pub fn take_while<'input, P>(pred: P) -> impl Parser<'input>
+pub fn take_while<'input, P>(pred: P) -> impl Parser<'input, &'input str>
 where
     P: Fn(char) -> bool,
 {
@@ -162,11 +136,11 @@ where
             }
             i += 1;
         }
-        Ok((&input[i..], (&input[..i]).to_owned()))
+        Ok((&input[i..], &input[..i]))
     }
 }
 
-pub fn take_till<'input, P>(pred: P) -> impl Parser<'input>
+pub fn take_till<'input, P>(pred: P) -> impl Parser<'input, &'input str>
 where
     P: Fn(char) -> bool,
 {
@@ -178,13 +152,13 @@ where
             }
             i += 1;
         }
-        Ok((&input[i..], (&input[..i]).to_owned()))
+        Ok((&input[i..], &input[..i]))
     }
 }
 
-pub fn take_until<'input, 'b>(s: &'b str) -> impl Parser<'input> + 'b {
+pub fn take_until<'input, 'b>(s: &'b str) -> impl Parser<'input, &'input str> + 'b {
     move |input: &'input str| match input.find(s) {
-        Some(i) => Ok((&input[i..], (&input[..i]).to_owned())),
+        Some(i) => Ok((&input[i..], &input[..i])),
         None => Err(ParseError::Missing {
             input,
             expected: s.to_owned(),
@@ -192,7 +166,7 @@ pub fn take_until<'input, 'b>(s: &'b str) -> impl Parser<'input> + 'b {
     }
 }
 
-fn digit_alpha_1<'input, P>(pred: P, p: String) -> impl Parser<'input>
+fn digit_alpha_1<'input, P>(pred: P, p: String) -> impl Parser<'input, &'input str>
 where
     P: Fn(char) -> bool + Copy,
 {
@@ -209,27 +183,27 @@ where
                 expected: p.clone(),
                 got: &input[..input.chars().next().unwrap().len_utf8()],
             }),
-            Some(i) => Ok((&input[i..], (&input[..i]).to_owned())),
-            None => Ok(("", input.to_owned())),
+            Some(i) => Ok((&input[i..], &input[..i])),
+            None => Ok(("", input)),
         }
     }
 }
 
-pub fn alpha1<'input>() -> impl Parser<'input> {
+pub fn alpha1<'input>() -> impl Parser<'input, &'input str> {
     move |input: &'input str| {
         digit_alpha_1(|c: char| !c.is_ascii_alphabetic(), "[a-zA-Z]".to_owned()).parse(input)
     }
 }
 
-pub fn digit1<'input>() -> impl Parser<'input> {
+pub fn digit1<'input>() -> impl Parser<'input, &'input str> {
     move |input: &'input str| {
         digit_alpha_1(|c: char| !c.is_ascii_digit(), "[0-9]".to_owned()).parse(input)
     }
 }
 
-pub fn anychar<'input>() -> impl Parser<'input> {
+pub fn anychar<'input>() -> impl Parser<'input, char> {
     move |input: &'input str| match input.chars().next() {
-        Some(m) => Ok((&input[m.len_utf8()..], m.to_string())),
+        Some(m) => Ok((&input[m.len_utf8()..], m)),
         None => Err(ParseError::EarlyEOF {
             input,
             expected: ".*".to_owned(),
@@ -247,7 +221,7 @@ mod tests {
     fn test_char() {
         let a = |input| char('a').parse(input);
 
-        assert_eq!(a("abc"), Ok(("bc", "a".to_owned())));
+        assert_eq!(a("abc"), Ok(("bc", 'a')));
 
         assert_eq!(
             a(" abc"),
@@ -272,19 +246,13 @@ mod tests {
     fn test_is_a() {
         let hex = |input| is_a("1234567890ABCDEF").parse(input);
 
-        assert_eq!(hex("123 and voila"), Ok((" and voila", "123".to_owned())));
+        assert_eq!(hex("123 and voila"), Ok((" and voila", "123")));
 
-        assert_eq!(
-            hex("DEADBEEF and others"),
-            Ok((" and others", "DEADBEEF".to_owned()))
-        );
+        assert_eq!(hex("DEADBEEF and others"), Ok((" and others", "DEADBEEF")));
 
-        assert_eq!(
-            hex("BADBABEsomething"),
-            Ok(("something", "BADBABE".to_owned()))
-        );
+        assert_eq!(hex("BADBABEsomething"), Ok(("something", "BADBABE")));
 
-        assert_eq!(hex("D15EA5E"), Ok(("", "D15EA5E".to_owned())));
+        assert_eq!(hex("D15EA5E"), Ok(("", "D15EA5E")));
 
         assert_eq!(
             hex("xD"),
@@ -308,14 +276,11 @@ mod tests {
     fn test_is_not() {
         let not_space = |input| is_not(" \t\r\n").parse(input);
 
-        assert_eq!(
-            not_space("Hello, World!"),
-            Ok((" World!", "Hello,".to_owned()))
-        );
+        assert_eq!(not_space("Hello, World!"), Ok((" World!", "Hello,")));
 
-        assert_eq!(not_space("Sometimes\t"), Ok(("\t", "Sometimes".to_owned())));
+        assert_eq!(not_space("Sometimes\t"), Ok(("\t", "Sometimes")));
 
-        assert_eq!(not_space("Nospace"), Ok(("", "Nospace".to_owned())));
+        assert_eq!(not_space("Nospace"), Ok(("", "Nospace")));
 
         assert_eq!(
             not_space(" N"),
@@ -337,7 +302,7 @@ mod tests {
 
     #[test]
     fn test_one_of() {
-        assert_eq!(one_of("abc").parse("b"), Ok(("", "b".to_owned())));
+        assert_eq!(one_of("abc").parse("b"), Ok(("", 'b')));
 
         assert_eq!(
             one_of("a").parse("bc"),
@@ -359,7 +324,7 @@ mod tests {
 
     #[test]
     fn test_none_of() {
-        assert_eq!(none_of("abc").parse("z"), Ok(("", "z".to_owned())));
+        assert_eq!(none_of("abc").parse("z"), Ok(("", 'z')));
 
         assert_eq!(
             none_of("ab").parse("a"),
@@ -383,7 +348,7 @@ mod tests {
     fn test_tag() {
         let hello = |input| tag("Hello").parse(input);
 
-        assert_eq!(hello("Hello, World!"), Ok((", World!", "Hello".to_owned())));
+        assert_eq!(hello("Hello, World!"), Ok((", World!", "Hello")));
 
         assert_eq!(
             hello("Something"),
@@ -423,11 +388,11 @@ mod tests {
     fn test_tag_no_case() {
         let hello = |input| tag_no_case("Hello").parse(input);
 
-        assert_eq!(hello("Hello, World!"), Ok((", World!", "Hello".to_owned())));
+        assert_eq!(hello("Hello, World!"), Ok((", World!", "Hello")));
 
-        assert_eq!(hello("hello, World!"), Ok((", World!", "hello".to_owned())));
+        assert_eq!(hello("hello, World!"), Ok((", World!", "hello")));
 
-        assert_eq!(hello("HeLlo, World!"), Ok((", World!", "HeLlo".to_owned())));
+        assert_eq!(hello("HeLlo, World!"), Ok((", World!", "HeLlo")));
 
         assert_eq!(
             hello("Something"),
@@ -467,9 +432,9 @@ mod tests {
     fn test_take() {
         let take6 = |input| take(6usize).parse(input);
 
-        assert_eq!(take6("1234567"), Ok(("7", "123456".to_owned())));
+        assert_eq!(take6("1234567"), Ok(("7", "123456")));
 
-        assert_eq!(take6("things"), Ok(("", "things".to_owned())));
+        assert_eq!(take6("things"), Ok(("", "things")));
 
         assert_eq!(
             take6("short"),
@@ -492,39 +457,33 @@ mod tests {
     fn test_take_while() {
         let alpha = |input| take_while(char::is_alphabetic).parse(input);
 
-        assert_eq!(alpha("latin123"), Ok(("123", "latin".to_owned())));
+        assert_eq!(alpha("latin123"), Ok(("123", "latin")));
 
-        assert_eq!(alpha("12345"), Ok(("12345", "".to_owned())));
+        assert_eq!(alpha("12345"), Ok(("12345", "")));
 
-        assert_eq!(alpha("latin"), Ok(("", "latin".to_owned())));
+        assert_eq!(alpha("latin"), Ok(("", "latin")));
 
-        assert_eq!(alpha(""), Ok(("", "".to_owned())));
+        assert_eq!(alpha(""), Ok(("", "")));
     }
 
     #[test]
     fn test_take_till() {
         let till_colon = |input| take_till(|c| c == ':').parse(input);
 
-        assert_eq!(till_colon("latin:123"), Ok((":123", "latin".to_owned())));
+        assert_eq!(till_colon("latin:123"), Ok((":123", "latin")));
 
-        assert_eq!(
-            till_colon(":empty matched"),
-            Ok((":empty matched", "".to_owned()))
-        );
+        assert_eq!(till_colon(":empty matched"), Ok((":empty matched", "")));
 
-        assert_eq!(till_colon("12345"), Ok(("", "12345".to_owned())));
+        assert_eq!(till_colon("12345"), Ok(("", "12345")));
 
-        assert_eq!(till_colon(""), Ok(("", "".to_owned())));
+        assert_eq!(till_colon(""), Ok(("", "")));
     }
 
     #[test]
     fn test_take_until() {
         let until_eof = |input| take_until("eof").parse(input);
 
-        assert_eq!(
-            until_eof("hello, worldeof"),
-            Ok(("eof", "hello, world".to_owned()))
-        );
+        assert_eq!(until_eof("hello, worldeof"), Ok(("eof", "hello, world")));
 
         assert_eq!(
             until_eof("hello, world"),
@@ -542,12 +501,12 @@ mod tests {
             })
         );
 
-        assert_eq!(until_eof("1eof2eof"), Ok(("eof2eof", "1".to_owned())));
+        assert_eq!(until_eof("1eof2eof"), Ok(("eof2eof", "1")));
     }
 
     #[test]
     fn test_alpha1() {
-        assert_eq!(alpha1().parse("aB1c"), Ok(("1c", "aB".to_owned())));
+        assert_eq!(alpha1().parse("aB1c"), Ok(("1c", "aB")));
 
         assert_eq!(
             alpha1().parse("1c"),
@@ -569,7 +528,7 @@ mod tests {
 
     #[test]
     fn test_digit1() {
-        assert_eq!(digit1().parse("21c"), Ok(("c", "21".to_owned())));
+        assert_eq!(digit1().parse("21c"), Ok(("c", "21")));
 
         assert_eq!(
             digit1().parse("c1"),
@@ -591,7 +550,7 @@ mod tests {
 
     #[test]
     fn test_anychar() {
-        assert_eq!(anychar().parse("abc"), Ok(("bc", "a".to_owned())));
+        assert_eq!(anychar().parse("abc"), Ok(("bc", 'a')));
 
         assert_eq!(
             anychar().parse(""),
