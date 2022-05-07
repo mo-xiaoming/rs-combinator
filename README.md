@@ -7,27 +7,18 @@
 ## Examples
 
 ```rust
-use rs_combinator::{chars::take_until, ParseError, Parser};
+use rs_combinator::{chars::take_until, Token, Parser};
 
 let until_eof = |input| take_until("eof").parse(input);
 
-assert_eq!(until_eof("hello, worldeof"), Ok(("eof", "hello, world")));
+assert_eq!(until_eof("hello, worldeof"), Ok(("eof", Token::TakeUntil("hello, world"))));
 
 assert_eq!(
-    until_eof("hello, world"),
-    Err(ParseError::Missing {
-        input: "hello, world",
-        expected: "eof".to_owned()
-    })
+    until_eof("hello, world").unwrap_err().failed_at,
+    Token::TakeUntil("hello, world"),
 );
 
-assert_eq!(
-    until_eof(""),
-    Err(ParseError::Missing {
-        input: "",
-        expected: "eof".to_owned()
-    })
-);
+assert_eq!(until_eof("").unwrap_err().failed_at, Token::TakeUntil(""));
 
-assert_eq!(until_eof("1eof2eof"), Ok(("eof2eof", "1")));
+assert_eq!(until_eof("1eof2eof"), Ok(("eof2eof", Token::TakeUntil("1"))));
 ```

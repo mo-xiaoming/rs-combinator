@@ -106,56 +106,47 @@ pub fn permutation<'input, Output>(
 mod tests {
     use super::*;
     use crate::{
+        assert_eq_parse_error,
         chars::{alpha1, anychar, char, digit1},
-        ParseError,
+        Token,
     };
 
     #[test]
     fn test_alt() {
         let parser = |input| alt((alpha1(), digit1())).parse(input);
 
-        assert_eq!(parser("abc"), Ok(("", "abc")));
+        assert_eq!(parser("abc"), Ok(("", Token::Alpha1("abc"))));
 
-        assert_eq!(parser("123456"), Ok(("", "123456")));
+        assert_eq!(parser("123456"), Ok(("", Token::Digit1("123456"))));
 
-        assert_eq!(
-            parser(" "),
-            Err(ParseError::Unexpected {
-                input: " ",
-                expected: "[0-9]".to_owned(),
-                got: " "
-            })
-        );
+        assert_eq_parse_error(" ", parser, Token::Digit1, None);
     }
 
     #[test]
     fn test_permutation() {
-        let parser1 = |input| permutation((alpha1(), digit1())).parse(input);
-
-        assert_eq!(parser1("abc123"), Ok(("", ("abc", "123"))));
-
-        assert_eq!(parser1("123abc"), Ok(("", ("abc", "123"))));
+        let parser = |input| permutation((alpha1(), digit1())).parse(input);
 
         assert_eq!(
-            parser1("abc;"),
-            Err(ParseError::Unexpected {
-                input: ";",
-                expected: "[0-9]".to_owned(),
-                got: ";"
-            })
+            parser("abc123"),
+            Ok(("", (Token::Alpha1("abc"), Token::Digit1("123"))))
         );
-
-        let parser2 = |input| permutation((anychar(), char('a'))).parse(input);
-
-        assert_eq!(parser2("ba"), Ok(("", ('b', 'a'))));
 
         assert_eq!(
-            parser2("ab"),
-            Err(ParseError::Unexpected {
-                input: "b",
-                expected: "a".to_owned(),
-                got: "b"
-            })
+            parser("123abc"),
+            Ok(("", (Token::Alpha1("abc"), Token::Digit1("123"))))
         );
+
+        assert_eq!(parser("abc;").unwrap_err().failed_at, Token::Digit1(";"));
+        assert_eq!(parser("abc;").unwrap_err().expected_length, None);
+
+        let parser = |input| permutation((anychar(), char('a'))).parse(input);
+
+        assert_eq!(
+            parser("ba"),
+            Ok(("", (Token::AnyChar("b"), Token::Char("a"))))
+        );
+
+        assert_eq!(parser("ab").unwrap_err().failed_at, Token::Char("b"));
+        assert_eq!(parser("ab").unwrap_err().expected_length, Some(1));
     }
 }

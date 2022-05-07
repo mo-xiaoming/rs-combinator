@@ -1,4 +1,4 @@
-use crate::{ParseError, Parser};
+use crate::Parser;
 
 pub fn delimited<'input, P1, P2, P3, Output1, Output2, Output3>(
     parser1: P1,
@@ -24,31 +24,24 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{chars::tag, ParseError};
+    use crate::{chars::tag, Token};
 
     #[test]
     fn test_delimited() {
         let parser = |input| delimited(tag("("), tag("abc"), tag(")")).parse(input);
 
-        assert_eq!(parser("(abc)"), Ok(("", "abc")));
+        assert_eq!(parser("(abc)"), Ok(("", Token::Tag("abc"))));
 
-        assert_eq!(parser("(abc)def"), Ok(("def", "abc")));
+        assert_eq!(parser("(abc)def"), Ok(("def", Token::Tag("abc"))));
 
-        assert_eq!(
-            parser(""),
-            Err(ParseError::EarlyEOF {
-                input: "",
-                expected: "(".to_owned()
-            })
-        );
+        let e = parser("").unwrap_err();
+        assert_eq!(e.failed_at, Token::Tag(""),);
+        assert!(e.expected_pattern.contains('('));
+        assert_eq!(e.expected_length, Some(1));
 
-        assert_eq!(
-            parser("123"),
-            Err(ParseError::Unexpected {
-                input: "123",
-                expected: "(".to_owned(),
-                got: "1"
-            })
-        );
+        let e = parser("123").unwrap_err();
+        assert_eq!(e.failed_at, Token::Tag("123"),);
+        assert!(e.expected_pattern.contains('('));
+        assert_eq!(e.expected_length, Some(1));
     }
 }
