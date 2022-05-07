@@ -32,6 +32,7 @@ where
 
 pub mod branch;
 pub mod chars;
+pub mod sequence;
 
 #[doc = include_str!("../README.md")]
 #[cfg(doctest)]
