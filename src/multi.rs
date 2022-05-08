@@ -1,4 +1,4 @@
-use crate::{Parser, ParseError};
+use crate::Parser;
 
 pub fn count<'input, Output, P>(parser: P, n: usize) -> impl Parser<'input, Vec<Output>>
 where
@@ -22,7 +22,7 @@ where
     P: Parser<'input, Output>,
 {
     move |input: &'input str| {
-        let mut v = Vec::new();
+        let mut v = Vec::with_capacity(4);
         let mut cur_input = input;
 
         loop {
@@ -35,6 +35,34 @@ where
                     v.push(r);
                 }
                 Err(_) => return Ok((cur_input, v)),
+            }
+        }
+    }
+}
+
+pub fn many1<'input, Output, P>(parser: P) -> impl Parser<'input, Vec<Output>>
+where
+    P: Parser<'input, Output>,
+{
+    move |input: &'input str| {
+        let mut v = Vec::with_capacity(4);
+        let mut cur_input = input;
+
+        loop {
+            match parser.parse(cur_input) {
+                Ok((next_input, r)) => {
+                    if cur_input.len() == next_input.len() {
+                        panic!("parsers accept empty inputs cannot be in many1");
+                    }
+                    cur_input = next_input;
+                    v.push(r);
+                }
+                Err(e) => {
+                    if v.is_empty() {
+                        return Err(e);
+                    }
+                    return Ok((cur_input, v));
+                }
             }
         }
     }
@@ -91,6 +119,31 @@ mod tests {
     #[test]
     #[should_panic(expected = "empty inputs")]
     fn test_many0_panic_with_xxx0() {
-        many0(tag("")).parse("abc");
+        let _ = many0(tag("")).parse("abc");
+    }
+
+    #[test]
+    fn test_many1() {
+        let parser = |input| many1(tag("abc")).parse(input);
+
+        assert_eq!(
+            parser("abcabc"),
+            Ok(("", vec![Token::Tag("abc"), Token::Tag("abc")]))
+        );
+
+        assert_eq!(parser("abc123"), Ok(("123", vec![Token::Tag("abc")])));
+
+        let e = parser("123123").unwrap_err();
+        assert_eq!(e.failed_at, Token::Tag("123123"));
+        assert!(e.expected_pattern.contains("abc"));
+        assert_eq!(e.expected_length, Some(3));
+
+        assert_eq_parse_error("", parser, Token::Tag, Some(3));
+    }
+
+    #[test]
+    #[should_panic(expected = "empty inputs")]
+    fn test_many1_panic_with_xxx0() {
+        let _ = many1(tag("")).parse("abc");
     }
 }
