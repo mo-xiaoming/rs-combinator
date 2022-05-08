@@ -84,15 +84,15 @@ where
 pub(crate) fn assert_eq_parse_error<'a, P, TokenCtor, Output>(
     input: &'a str,
     parser: P,
-    t: TokenCtor,
-    l: Option<usize>,
+    token_ctor: TokenCtor,
+    expected_length: Option<usize>,
 ) where
     P: Fn(&'a str) -> ParseResult<'a, Output>,
     TokenCtor: Fn(&'a str) -> Token,
     Output: std::fmt::Debug,
 {
-    assert_eq!(parser(input).unwrap_err().failed_at, t(input));
-    assert_eq!(parser(input).unwrap_err().expected_length, l);
+    assert_eq!(parser(input).unwrap_err().failed_at, token_ctor(input));
+    assert_eq!(parser(input).unwrap_err().expected_length, expected_length);
 }
 
 pub mod branch;
