@@ -1,4 +1,4 @@
-use crate::Parser;
+use crate::{ParseResult, Parser};
 
 pub fn delimited<'input, Output1, Output2, Output3>(
     parser1: impl Parser<'input, Output1>,
@@ -69,10 +69,51 @@ pub fn terminated<'input, Output1, Output2>(
     }
 }
 
+pub trait Tuple<'input, Output> {
+    fn parse(&self, input: &'input str) -> ParseResult<'input, Output>;
+}
+
+impl<'input, Output1, Output2, P1, P2> Tuple<'input, (Output1, Output2)> for (P1, P2)
+where
+    P1: Parser<'input, Output1>,
+    P2: Parser<'input, Output2>,
+{
+    fn parse(&self, input: &'input str) -> ParseResult<'input, (Output1, Output2)> {
+        let (i1, r1) = self.0.parse(input)?;
+        let (i2, r2) = self.1.parse(i1)?;
+        Ok((i2, (r1, r2)))
+    }
+}
+
+impl<'input, Output1, Output2, Output3, P1, P2, P3> Tuple<'input, (Output1, Output2, Output3)>
+    for (P1, P2, P3)
+where
+    P1: Parser<'input, Output1>,
+    P2: Parser<'input, Output2>,
+    P3: Parser<'input, Output3>,
+{
+    fn parse(&self, input: &'input str) -> ParseResult<'input, (Output1, Output2, Output3)> {
+        let (i1, r1) = self.0.parse(input)?;
+        let (i2, r2) = self.1.parse(i1)?;
+        let (i3, r3) = self.2.parse(i2)?;
+        Ok((i3, (r1, r2, r3)))
+    }
+}
+
+pub fn tuple<'input, Output1, Output2, Output3>(
+    ps: impl Tuple<'input, (Output1, Output2, Output3)>,
+) -> impl Parser<'input, (Output1, Output2, Output3)> {
+    move |input: &'input str| ps.parse(input)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{assert_eq_parse_error, chars::tag, Token};
+    use crate::{
+        assert_eq_parse_error,
+        chars::{alpha1, digit1, tag},
+        Token,
+    };
 
     #[test]
     fn test_delimited() {
@@ -155,5 +196,22 @@ mod tests {
         assert_eq_parse_error("", parser, Token::Tag, Some(3));
 
         assert_eq_parse_error("123", parser, Token::Tag, Some(3));
+    }
+
+    #[test]
+    fn test_tuple() {
+        let parser = |input| tuple((alpha1(), digit1(), alpha1())).parse(input);
+
+        assert_eq!(
+            parser("abc1234defgh"),
+            Ok((
+                "",
+                (Token::Alpha1("abc"), Token::Digit1("1234"), Token::Alpha1("defgh"))
+            ))
+        );
+
+        let e = parser("abc1234").unwrap_err();
+        assert_eq!(e.failed_at, Token::Alpha1(""));
+        assert_eq!(e.expected_length, None);
     }
 }
