@@ -98,6 +98,7 @@ pub(crate) fn assert_eq_parse_error<'a, P, TokenCtor, Output>(
 pub mod branch;
 pub mod chars;
 pub mod sequence;
+pub mod multi;
 
 #[doc = include_str!("../README.md")]
 #[cfg(doctest)]
