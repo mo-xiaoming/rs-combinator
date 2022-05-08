@@ -10,10 +10,7 @@ where
     P2: Parser<'input, Output>,
 {
     fn choice(&self, input: &'input str) -> ParseResult<'input, Output> {
-        match self.0.parse(input) {
-            Err(_) => self.1.parse(input),
-            r => r,
-        }
+        self.0.parse(input).or_else(|_| self.1.parse(input))
     }
 }
 
@@ -24,13 +21,7 @@ where
     P3: Parser<'input, Output>,
 {
     fn choice(&self, input: &'input str) -> ParseResult<'input, Output> {
-        match self.0.parse(input) {
-            Err(_) => match self.1.parse(input) {
-                Err(_) => self.2.parse(input),
-                r => r,
-            },
-            r => r,
-        }
+        self.0.parse(input).or_else(|_| self.1.parse(input).or_else(|_| self.2.parse(input)))
     }
 }
 
