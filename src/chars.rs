@@ -1,121 +1,139 @@
 use crate::{ParseError, Parser, Token};
 
-pub fn char<'input>(c: char) -> impl Parser<'input, Token<'input>> {
-    move |input: &'input str| match input.chars().next() {
-        Some(m) if m == c => Ok((&input[c.len_utf8()..], Token::Char(&input[..c.len_utf8()]))),
-        _ => Err(ParseError::new(Token::Char(input), c.to_string(), Some(1))),
+struct BreakAt<'input> {
+    first: &'input str,
+    second: &'input str,
+}
+
+fn break_at<P>(input: &str, pred: P) -> BreakAt
+where
+    P: FnMut(char) -> bool,
+{
+    match input.chars().position(pred) {
+        Some(n) => {
+            let (a, b) = input.split_at(n);
+            BreakAt {
+                first: a,
+                second: b,
+            }
+        }
+        None => BreakAt {
+            first: input,
+            second: "",
+        },
     }
 }
 
-fn is_a_not_impl<'input, 'b, P: 'b, R: 'b, EF: 'b>(
-    s: &'b str,
-    pred: P,
-    ret_fn: R,
-    err_fmt_fn: EF,
-) -> impl Parser<'input, Token<'input>> + 'b
-where
-    P: Fn(&'b str, char) -> bool,
-    R: Fn(&'input str) -> Token,
-    EF: Fn() -> String,
-{
+fn match_many1_chars<'input>(
+    break_at_pred: impl Fn(char) -> bool + Copy,
+    token_ctor: impl Fn(&'input str) -> Token,
+    err_msg_fn: impl Fn() -> String,
+) -> impl Parser<'input, Token<'input>> {
     move |input: &'input str| {
-        let mut it = input;
-        loop {
-            match it.chars().next() {
-                Some(m) if pred(s, m) => it = &it[m.len_utf8()..],
-                _ => {
-                    if it == input {
-                        return Err(ParseError::new(ret_fn(input), err_fmt_fn(), None));
-                    }
-                    let l = input.len() - it.len();
-                    return Ok((&input[l..], ret_fn(&input[..l])));
-                }
-            }
+        let BreakAt { first, second } = break_at(input, break_at_pred);
+        if first.is_empty() {
+            Err(ParseError::new(token_ctor(input), err_msg_fn(), None))
+        } else {
+            Ok((second, token_ctor(first)))
         }
     }
 }
 
-pub fn is_a<'input, 'b>(s: &'b str) -> impl Parser<'input, Token<'input>> + 'b {
+pub fn match_many0_chars<'input>(
+    break_at_pred: impl Fn(char) -> bool + Copy,
+    token_ctor: impl Fn(&'input str) -> Token,
+) -> impl Parser<'input, Token<'input>> {
     move |input: &'input str| {
-        is_a_not_impl(s, str::contains, Token::IsA, || {
-            format!("chars to be any of \"{s}\"")
-        })
-        .parse(input)
+        let BreakAt { first, second } = break_at(input, break_at_pred);
+        Ok((second, token_ctor(first)))
     }
 }
 
-pub fn is_not<'input, 'b>(s: &'b str) -> impl Parser<'input, Token<'input>> + 'b {
-    move |input: &'input str| {
-        is_a_not_impl(
-            s,
-            |a, c| !a.contains(c),
-            Token::IsNot,
-            || format!("chars to be none of \"{s}\""),
-        )
-        .parse(input)
-    }
-}
-
-fn one_none_of_impl<'input, 'b, P: 'b, R: 'b, EF: 'b>(
-    s: &'b str,
-    pred: P,
-    ret_fn: R,
-    err_fmt_fn: EF,
-) -> impl Parser<'input, Token<'input>> + 'b
-where
-    P: Fn(&'b str, char) -> bool,
-    R: Fn(&'input str) -> Token,
-    EF: Fn() -> String,
-{
+fn match_first_char<'input>(
+    break_at_pred: impl Fn(char) -> bool + Copy,
+    token_ctor: impl Fn(&'input str) -> Token,
+    err_msg_fn: impl Fn() -> String,
+) -> impl Parser<'input, Token<'input>> {
     move |input: &'input str| match input.chars().next() {
-        Some(m) if pred(s, m) => Ok((&input[m.len_utf8()..], ret_fn(&input[..m.len_utf8()]))),
-        _ => Err(ParseError::new(ret_fn(input), err_fmt_fn(), Some(1))),
-    }
-}
-pub fn one_of<'input, 'b>(s: &'b str) -> impl Parser<'input, Token<'input>> + 'b {
-    move |input: &'input str| {
-        one_none_of_impl(s, str::contains, Token::OneOf, || {
-            format!("char to be one of \"{s}\"")
-        })
-        .parse(input)
+        Some(m) if break_at_pred(m) => {
+            Ok((&input[m.len_utf8()..], token_ctor(&input[..m.len_utf8()])))
+        }
+        _ => Err(ParseError::new(token_ctor(input), err_msg_fn(), Some(1))),
     }
 }
 
-pub fn none_of<'input, 'b>(s: &'b str) -> impl Parser<'input, Token<'input>> + 'b {
+fn match_char_sequence<'input, 'b>(
+    seq: &'b str,
+    cmp: impl Fn(&str, &str) -> bool + Copy + 'b,
+    token_ctor: impl Fn(&'input str) -> Token + Copy + 'b,
+) -> impl Parser<'input, Token<'input>> + 'b {
+    move |input: &'input str| match input.get(..seq.len()) {
+        Some(m) if cmp(m, seq) => Ok((&input[m.len()..], token_ctor(&input[..m.len()]))),
+        _ => Err(ParseError::new(
+            token_ctor(input),
+            seq.to_owned(),
+            Some(seq.len()),
+        )),
+    }
+}
+
+pub fn char<'input>(c: char) -> impl Parser<'input, Token<'input>> {
     move |input: &'input str| {
-        one_none_of_impl(
-            s,
-            |a, c| !a.contains(c),
-            Token::NoneOf,
-            || format!("char to be none of \"{s}\""),
+        match_first_char(|m| c == m, Token::Char, || c.to_string()).parse(input)
+    }
+}
+pub fn is_a<'input, 'b>(chars_set: &'b str) -> impl Parser<'input, Token<'input>> + 'b {
+    move |input: &'input str| {
+        match_many1_chars(
+            |c| !chars_set.contains(c),
+            Token::IsA,
+            || format!("chars to be any of \"{chars_set}\""),
         )
         .parse(input)
     }
 }
 
-fn tag_no_case_impl<'input, 'b, P: 'b, R: 'b>(
-    s: &'b str,
-    cmp: P,
-    ret_fn: R,
-) -> impl Parser<'input, Token<'input>> + 'b
-where
-    P: Fn(&str, &str) -> bool,
-    R: Fn(&'input str) -> Token,
-{
-    move |input: &'input str| match input.get(..s.len()) {
-        Some(m) if cmp(m, s) => Ok((&input[m.len()..], ret_fn(&input[..m.len()]))),
-        _ => Err(ParseError::new(ret_fn(input), s.to_owned(), Some(s.len()))),
+pub fn is_not<'input, 'b>(chars_set: &'b str) -> impl Parser<'input, Token<'input>> + 'b {
+    move |input: &'input str| {
+        match_many1_chars(
+            |c| chars_set.contains(c),
+            Token::IsNot,
+            || format!("chars to be none of \"{chars_set}\""),
+        )
+        .parse(input)
     }
 }
 
-pub fn tag<'input, 'b>(s: &'b str) -> impl Parser<'input, Token<'input>> + 'b {
-    move |input: &'input str| tag_no_case_impl(s, str::eq, Token::Tag).parse(input)
+pub fn one_of<'input, 'b>(chars_set: &'b str) -> impl Parser<'input, Token<'input>> + 'b {
+    move |input: &'input str| {
+        match_first_char(
+            |c| chars_set.contains(c),
+            Token::OneOf,
+            || format!("char to be one of \"{chars_set}\""),
+        )
+        .parse(input)
+    }
 }
 
-pub fn tag_no_case<'input, 'b>(s: &'b str) -> impl Parser<'input, Token<'input>> + 'b {
+pub fn none_of<'input, 'b>(chars_set: &'b str) -> impl Parser<'input, Token<'input>> + 'b {
     move |input: &'input str| {
-        tag_no_case_impl(
-            s,
+        match_first_char(
+            |c| !chars_set.contains(c),
+            Token::NoneOf,
+            || format!("char to be none of \"{chars_set}\""),
+        )
+        .parse(input)
+    }
+}
+
+pub fn tag<'input, 'b>(seq: &'b str) -> impl Parser<'input, Token<'input>> + 'b {
+    move |input: &'input str| match_char_sequence(seq, str::eq, Token::Tag).parse(input)
+}
+
+pub fn tag_no_case<'input, 'b>(seq: &'b str) -> impl Parser<'input, Token<'input>> + 'b {
+    move |input: &'input str| {
+        match_char_sequence(
+            seq,
             |a, b| a.to_lowercase() == b.to_ascii_lowercase(),
             Token::TagNoCase,
         )
@@ -132,79 +150,38 @@ pub fn take<'input>(n: usize) -> impl Parser<'input, Token<'input>> {
 
 pub fn take_while<'input, P>(pred: P) -> impl Parser<'input, Token<'input>>
 where
-    P: Fn(char) -> bool,
+    P: Fn(char) -> bool + Copy,
 {
-    move |input: &'input str| {
-        let mut i = 0;
-        for c in input.chars() {
-            if !pred(c) {
-                break;
-            }
-            i += 1;
-        }
-        Ok((&input[i..], Token::TakeWhile(&input[..i])))
-    }
+    move |input: &'input str| match_many0_chars(|c| !pred(c), Token::TakeWhile).parse(input)
 }
 
 pub fn take_till<'input, P>(pred: P) -> impl Parser<'input, Token<'input>>
 where
-    P: Fn(char) -> bool,
-{
-    move |input: &'input str| {
-        let mut i = 0;
-        for c in input.chars() {
-            if pred(c) {
-                break;
-            }
-            i += 1;
-        }
-        Ok((&input[i..], Token::TakeTill(&input[..i])))
-    }
-}
-
-pub fn take_until<'input, 'b>(s: &'b str) -> impl Parser<'input, Token<'input>> + 'b {
-    move |input: &'input str| match input.find(s) {
-        Some(i) => Ok((&input[i..], Token::TakeUntil(&input[..i]))),
-        None => Err(ParseError::new(Token::TakeUntil(input), s.to_owned(), None)),
-    }
-}
-
-fn digit_alpha_1<'input, P, R, EF>(
-    pred: P,
-    ret_fn: R,
-    err_fmt_fn: EF,
-) -> impl Parser<'input, Token<'input>>
-where
     P: Fn(char) -> bool + Copy,
-    R: Fn(&'input str) -> Token,
-    EF: Fn() -> String,
 {
-    move |input: &'input str| {
-        if input.is_empty() {
-            return Err(ParseError::new(ret_fn(input), err_fmt_fn(), None));
-        }
-        match input.find(pred) {
-            Some(0) => Err(ParseError::new(ret_fn(input), err_fmt_fn(), None)),
-            Some(i) => Ok((&input[i..], ret_fn(&input[..i]))),
-            None => Ok(("", ret_fn(input))),
-        }
+    move |input: &'input str| match_many0_chars(pred, Token::TakeTill).parse(input)
+}
+
+pub fn take_until<'input, 'b>(boundary_seq: &'b str) -> impl Parser<'input, Token<'input>> + 'b {
+    move |input: &'input str| match input.find(boundary_seq) {
+        Some(i) => Ok((&input[i..], Token::TakeUntil(&input[..i]))),
+        None => Err(ParseError::new(Token::TakeUntil(input), boundary_seq.to_owned(), None)),
     }
 }
 
 pub fn alpha1<'input>() -> impl Parser<'input, Token<'input>> {
     move |input: &'input str| {
-        digit_alpha_1(
+        match_many1_chars(
             |c: char| !c.is_ascii_alphabetic(),
             Token::Alpha1,
             || "any letters".to_owned(),
-        )
-        .parse(input)
+        ).parse(input)
     }
 }
 
 pub fn digit1<'input>() -> impl Parser<'input, Token<'input>> {
     move |input: &'input str| {
-        digit_alpha_1(
+        match_many1_chars(
             |c: char| !c.is_ascii_digit(),
             Token::Digit1,
             || "any digits".to_owned(),
