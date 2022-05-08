@@ -73,26 +73,25 @@ pub trait Tuple<'input, Output> {
     fn parse(&self, input: &'input str) -> ParseResult<'input, Output>;
 }
 
-impl<'input, Output1, Output2, P1, P2> Tuple<'input, (Output1, Output2)> for (P1, P2)
+impl<'input, Output, P1, P2> Tuple<'input, (Output, Output)> for (P1, P2)
 where
-    P1: Parser<'input, Output1>,
-    P2: Parser<'input, Output2>,
+    P1: Parser<'input, Output>,
+    P2: Parser<'input, Output>,
 {
-    fn parse(&self, input: &'input str) -> ParseResult<'input, (Output1, Output2)> {
+    fn parse(&self, input: &'input str) -> ParseResult<'input, (Output, Output)> {
         let (i1, r1) = self.0.parse(input)?;
         let (i2, r2) = self.1.parse(i1)?;
         Ok((i2, (r1, r2)))
     }
 }
 
-impl<'input, Output1, Output2, Output3, P1, P2, P3> Tuple<'input, (Output1, Output2, Output3)>
-    for (P1, P2, P3)
+impl<'input, Output, P1, P2, P3> Tuple<'input, (Output, Output, Output)> for (P1, P2, P3)
 where
-    P1: Parser<'input, Output1>,
-    P2: Parser<'input, Output2>,
-    P3: Parser<'input, Output3>,
+    P1: Parser<'input, Output>,
+    P2: Parser<'input, Output>,
+    P3: Parser<'input, Output>,
 {
-    fn parse(&self, input: &'input str) -> ParseResult<'input, (Output1, Output2, Output3)> {
+    fn parse(&self, input: &'input str) -> ParseResult<'input, (Output, Output, Output)> {
         let (i1, r1) = self.0.parse(input)?;
         let (i2, r2) = self.1.parse(i1)?;
         let (i3, r3) = self.2.parse(i2)?;
@@ -100,9 +99,7 @@ where
     }
 }
 
-pub fn tuple<'input, Output1, Output2, Output3>(
-    ps: impl Tuple<'input, (Output1, Output2, Output3)>,
-) -> impl Parser<'input, (Output1, Output2, Output3)> {
+pub fn tuple<'input, Output>(ps: impl Tuple<'input, Output>) -> impl Parser<'input, Output> {
     move |input: &'input str| ps.parse(input)
 }
 
@@ -206,7 +203,11 @@ mod tests {
             parser("abc1234defgh"),
             Ok((
                 "",
-                (Token::Alpha1("abc"), Token::Digit1("1234"), Token::Alpha1("defgh"))
+                (
+                    Token::Alpha1("abc"),
+                    Token::Digit1("1234"),
+                    Token::Alpha1("defgh")
+                )
             ))
         );
 
