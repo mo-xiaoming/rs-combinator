@@ -1,4 +1,4 @@
-use crate::Parser;
+use crate::{Parser};
 
 pub fn delimited<'input, Output1, Output2, Output3>(
     parser1: impl Parser<'input, Output1>,
@@ -16,6 +16,20 @@ pub fn delimited<'input, Output1, Output2, Output3>(
     }
 }
 
+pub fn pair<'input, Output1, Output2>(
+    parser1: impl Parser<'input, Output1>,
+    parser2: impl Parser<'input, Output2>,
+) -> impl Parser<'input, (Output1, Output2)> {
+    move |input: &'input str| {
+        parser1.parse(input).and_then(|(next_input, r1)| {
+            parser2
+                .parse(next_input)
+                .map(|(last_input, r2)| (last_input, (r1, r2)))
+        })
+    }
+}
+
+// TODO: rewrite with pair?
 pub fn preceded<'input, Output1, Output2>(
     parser1: impl Parser<'input, Output1>,
     parser2: impl Parser<'input, Output2>,
@@ -27,6 +41,7 @@ pub fn preceded<'input, Output1, Output2>(
     }
 }
 
+// TODO: rewrite with pair?
 pub fn terminated<'input, Output1, Output2>(
     parser1: impl Parser<'input, Output1>,
     parser2: impl Parser<'input, Output2>,
@@ -66,11 +81,11 @@ mod tests {
 
     #[test]
     fn test_preceded() {
-        let parser = |input| preceded(tag("abc"), tag("efg")).parse(input);
+        let parser = |input| preceded(tag("abc"), tag("efgh")).parse(input);
 
-        assert_eq!(parser("abcefg"), Ok(("", Token::Tag("efg"))));
+        assert_eq!(parser("abcefgh"), Ok(("", Token::Tag("efgh"))));
 
-        assert_eq!(parser("abcefghij"), Ok(("hij", Token::Tag("efg"))));
+        assert_eq!(parser("abcefghij"), Ok(("ij", Token::Tag("efgh"))));
 
         assert_eq_parse_error("", parser, Token::Tag, Some(3));
 
@@ -79,11 +94,24 @@ mod tests {
 
     #[test]
     fn test_terminated() {
-        let parser = |input| terminated(tag("abc"), tag("efg")).parse(input);
+        let parser = |input| terminated(tag("abc"), tag("efgh")).parse(input);
 
-        assert_eq!(parser("abcefg"), Ok(("", Token::Tag("abc"))));
+        assert_eq!(parser("abcefgh"), Ok(("", Token::Tag("abc"))));
 
-        assert_eq!(parser("abcefghij"), Ok(("hij", Token::Tag("abc"))));
+        assert_eq!(parser("abcefghij"), Ok(("ij", Token::Tag("abc"))));
+
+        assert_eq_parse_error("", parser, Token::Tag, Some(3));
+
+        assert_eq_parse_error("123", parser, Token::Tag, Some(3));
+    }
+
+    #[test]
+    fn test_pair() {
+        let parser = |input| pair(tag("abc"), tag("efgh")).parse(input);
+
+        assert_eq!(parser("abcefgh"), Ok(("", (Token::Tag("abc"), Token::Tag("efgh")))));
+
+        assert_eq!(parser("abcefghij"), Ok(("ij", (Token::Tag("abc"), Token::Tag("efgh")))));
 
         assert_eq_parse_error("", parser, Token::Tag, Some(3));
 
