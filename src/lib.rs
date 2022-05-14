@@ -41,11 +41,7 @@ impl<'input> ParseError<'input> {
     }
     fn append(self, error: ParseError<'input>) -> Self {
         match self {
-            a @ Self::Single {
-                failed_at: _,
-                expected_length: _,
-                expected_pattern: _,
-            } => Self::Multiple(vec![a, error]),
+            a @ Self::Single { .. } => Self::Multiple(vec![a, error]),
             Self::Multiple(mut m) => {
                 m.push(error);
                 Self::Multiple(m)
@@ -60,9 +56,7 @@ impl<'input> std::fmt::Display for ParseError<'input> {
             ($a:expr) => {
                 match self {
                     ParseError::Single {
-                        failed_at: _,
-                        expected_pattern,
-                        expected_length: _,
+                        expected_pattern, ..
                     } => {
                         format!($a, expected_pattern)
                     }
@@ -79,8 +73,8 @@ impl<'input> std::fmt::Display for ParseError<'input> {
         match self {
             ParseError::Single {
                 failed_at,
-                expected_pattern: _,
                 expected_length,
+                ..
             } => {
                 let s = match failed_at {
                     Token::Char(_) => f!("'{}'"),
