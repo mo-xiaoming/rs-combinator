@@ -8,9 +8,20 @@ impl<'input, Output, P1, P2> Alt<'input, Output> for (P1, P2)
 where
     P1: Parser<'input, Output>,
     P2: Parser<'input, Output>,
+    Output: std::fmt::Debug,
 {
     fn choice(&self, input: &'input str) -> ParseResult<'input, Output> {
-        self.0.parse(input).or_else(|_| self.1.parse(input))
+        let r1 = self.0.parse(input);
+        if let a @ Ok(_) = r1 {
+            return a;
+        }
+        let e1 = r1.unwrap_err();
+        let r2 = self.1.parse(input);
+        if let a @ Ok(_) = r2 {
+            return a;
+        }
+        let e2 = r2.unwrap_err();
+        return Err(ParseError::Multiple(vec![e1, e2]));
     }
 }
 
@@ -19,9 +30,25 @@ where
     P1: Parser<'input, Output>,
     P2: Parser<'input, Output>,
     P3: Parser<'input, Output>,
+    Output: std::fmt::Debug,
 {
     fn choice(&self, input: &'input str) -> ParseResult<'input, Output> {
-        self.0.parse(input).or_else(|_| self.1.parse(input).or_else(|_| self.2.parse(input)))
+        let r1 = self.0.parse(input);
+        if let a @ Ok(_) = r1 {
+            return a;
+        }
+        let e1 = r1.unwrap_err();
+        let r2 = self.1.parse(input);
+        if let a @ Ok(_) = r2 {
+            return a;
+        }
+        let e2 = r2.unwrap_err();
+        let r3 = self.2.parse(input);
+        if let a @ Ok(_) = r3 {
+            return a;
+        }
+        let e3 = r3.unwrap_err();
+        return Err(ParseError::Multiple(vec![e1, e2, e3]));
     }
 }
 
@@ -42,9 +69,8 @@ where
     fn permutation(&self, input: &'input str) -> ParseResult<'input, (Output, Output)> {
         let mut it = input;
         let mut res: [Option<Output>; 2] = [None, None];
-        let mut err: Option<ParseError> = None;
+        let mut errs: [Option<ParseError>; 2] = [None, None];
         loop {
-            let mut nerr = 0;
             if res[0].is_none() {
                 match self.0.parse(it) {
                     Ok((next_input, last_match)) => {
@@ -56,8 +82,7 @@ where
                         if res[1].is_some() {
                             return Err(e);
                         }
-                        err = Some(e);
-                        nerr += 1;
+                        errs[0] = Some(e);
                     }
                 }
             }
@@ -72,13 +97,15 @@ where
                         if res[0].is_some() {
                             return Err(e);
                         }
-                        err = Some(e);
-                        nerr += 1;
+                        errs[1] = Some(e);
                     }
                 }
             }
-            if nerr == 2 {
-                return Err(err.unwrap());
+            if errs.iter().all(Option::is_some) {
+                return Err(ParseError::Multiple(vec![
+                    errs[0].take().unwrap(),
+                    errs[1].take().unwrap(),
+                ]));
             }
             if res.iter().all(Option::is_some) {
                 return Ok((it, (res[0].unwrap(), res[1].unwrap())));
@@ -97,9 +124,9 @@ pub fn permutation<'input, Output>(
 mod tests {
     use super::*;
     use crate::{
-        assert_eq_parse_error,
+        assert_eq_parse_error_multiple, assert_eq_parse_error_single, assert_eq_single_error,
         chars::{alpha1, anychar, char, digit1},
-        Token,
+        SingleError, Token,
     };
 
     #[test]
@@ -110,7 +137,37 @@ mod tests {
 
         assert_eq!(parser("123456"), Ok(("", Token::Digit1("123456"))));
 
-        assert_eq_parse_error(" ", parser, Token::Digit1, None);
+        assert_eq_parse_error_multiple(" ", parser, |me| {
+            assert_eq!(me.len(), 2);
+            match &me[0] {
+                a @ ParseError::Single { .. } => {
+                    assert_eq_single_error(
+                        " ",
+                        &SingleError {
+                            token_ctor: Token::Alpha1,
+                            expected_length: None,
+                            expected_pattern_contains: Some("more than one letter"),
+                        },
+                        a,
+                    );
+                }
+                ParseError::Multiple(_) => unreachable!(),
+            }
+            match &me[1] {
+                a @ ParseError::Single { .. } => {
+                    assert_eq_single_error(
+                        " ",
+                        &SingleError {
+                            token_ctor: Token::Digit1,
+                            expected_length: None,
+                            expected_pattern_contains: Some("more than one digit"),
+                        },
+                        a,
+                    );
+                }
+                ParseError::Multiple(_) => unreachable!(),
+            };
+        });
     }
 
     #[test]
@@ -127,8 +184,12 @@ mod tests {
             Ok(("", (Token::Alpha1("abc"), Token::Digit1("123"))))
         );
 
-        assert_eq!(parser("abc;").unwrap_err().failed_at, Token::Digit1(";"));
-        assert_eq!(parser("abc;").unwrap_err().expected_length, None);
+        let se = SingleError {
+            token_ctor: Token::Digit1(";"),
+            expected_length: None,
+            expected_pattern_contains: Some("more than one digit"),
+        };
+        assert_eq_parse_error_single("abc;", parser, &se);
 
         let parser = |input| permutation((anychar(), char('a'))).parse(input);
 
@@ -137,7 +198,34 @@ mod tests {
             Ok(("", (Token::AnyChar("b"), Token::Char("a"))))
         );
 
-        assert_eq!(parser("ab").unwrap_err().failed_at, Token::Char("b"));
-        assert_eq!(parser("ab").unwrap_err().expected_length, Some(1));
+        let se = SingleError {
+            token_ctor: Token::Char("b"),
+            expected_length: Some(1),
+            expected_pattern_contains: Some("a"),
+        };
+        assert_eq_parse_error_single("ab", parser, &se);
+
+        let parser = |input| permutation((char('b'), char('a'))).parse(input);
+        assert_eq_parse_error_multiple("cde", parser, |me| {
+            assert_eq!(me.len(), 2);
+            assert_eq_single_error(
+                "cde",
+                &SingleError {
+                    token_ctor: Token::Char,
+                    expected_length: Some(1),
+                    expected_pattern_contains: Some("b"),
+                },
+                &me[0],
+            );
+            assert_eq_single_error(
+                "cde",
+                &SingleError {
+                    token_ctor: Token::Char,
+                    expected_length: Some(1),
+                    expected_pattern_contains: Some("a"),
+                },
+                &me[1],
+            );
+        });
     }
 }

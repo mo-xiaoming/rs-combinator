@@ -18,10 +18,13 @@ pub enum Token<'input> {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub struct ParseError<'input> {
-    pub failed_at: Token<'input>, // .0 pointers to the original slice
-    pub expected_pattern: String,
-    pub expected_length: Option<usize>,
+pub enum ParseError<'input> {
+    Single {
+        failed_at: Token<'input>, // .0 pointers to the original slice
+        expected_pattern: String,
+        expected_length: Option<usize>,
+    },
+    Multiple(Vec<ParseError<'input>>),
 }
 
 impl<'input> ParseError<'input> {
@@ -30,10 +33,23 @@ impl<'input> ParseError<'input> {
         expected_pattern: String,
         expected_length: Option<usize>,
     ) -> Self {
-        Self {
+        Self::Single {
             failed_at,
             expected_pattern,
             expected_length,
+        }
+    }
+    fn append(self, error: ParseError<'input>) -> Self {
+        match self {
+            a @ Self::Single {
+                failed_at: _,
+                expected_length: _,
+                expected_pattern: _,
+            } => Self::Multiple(vec![a, error]),
+            Self::Multiple(mut m) => {
+                m.push(error);
+                Self::Multiple(m)
+            }
         }
     }
 }
@@ -42,28 +58,54 @@ impl<'input> std::fmt::Display for ParseError<'input> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         macro_rules! f {
             ($a:expr) => {
-                format!($a, self.expected_pattern)
+                match self {
+                    ParseError::Single {
+                        failed_at: _,
+                        expected_pattern,
+                        expected_length: _,
+                    } => {
+                        format!($a, expected_pattern)
+                    }
+                    ParseError::Multiple(v) => {
+                        let mut s = String::with_capacity(100);
+                        for e in v {
+                            s.push_str(format!("{e}\n").as_ref());
+                        }
+                        s
+                    }
+                }
             };
         }
-        let s = match self.failed_at {
-            Token::Char(_) => f!("'{}'"),
-            Token::IsA(_) => f!("till not one of \"{}\""),
-            Token::IsNot(_) => f!("until one of \"{}\""),
-            Token::OneOf(_) => f!("one of \"{}\""),
-            Token::NoneOf(_) => f!("none of \"{}\""),
-            Token::Tag(_) => f!("\"{}\""),
-            Token::TagNoCase(_) => f!("case insensitive \"{}\""),
-            Token::Take(_) => format!("{} chars", self.expected_length.unwrap()),
-            Token::TakeWhile(_) => f!("{}"),
-            Token::TakeUntil(_) => f!("{}"),
-            Token::TakeTill(_) => f!("{}"),
-            Token::Alpha1(_) => f!("{}"),
-            Token::Digit1(_) => f!("{}"),
-            Token::AnyChar(_) => f!("{}"),
-        };
-        write!(f, "{s}")
+        match self {
+            ParseError::Single {
+                failed_at,
+                expected_pattern: _,
+                expected_length,
+            } => {
+                let s = match failed_at {
+                    Token::Char(_) => f!("'{}'"),
+                    Token::IsA(_) => f!("till not one of \"{}\""),
+                    Token::IsNot(_) => f!("until one of \"{}\""),
+                    Token::OneOf(_) => f!("one of \"{}\""),
+                    Token::NoneOf(_) => f!("none of \"{}\""),
+                    Token::Tag(_) => f!("\"{}\""),
+                    Token::TagNoCase(_) => f!("case insensitive \"{}\""),
+                    Token::Take(_) => format!("{} chars", expected_length.unwrap()),
+                    Token::TakeWhile(_) => f!("{}"),
+                    Token::TakeUntil(_) => f!("{}"),
+                    Token::TakeTill(_) => f!("{}"),
+                    Token::Alpha1(_) => f!("{}"),
+                    Token::Digit1(_) => f!("{}"),
+                    Token::AnyChar(_) => f!("{}"),
+                };
+                write!(f, "{s}")
+            }
+            a @ ParseError::Multiple(_) => write!(f, "{a}"),
+        }
     }
 }
+
+impl<'input> std::error::Error for ParseError<'input> {}
 
 type ParseResult<'input, Output> = Result<(&'input str, Output), ParseError<'input>>;
 
@@ -81,24 +123,110 @@ where
 }
 
 #[cfg(test)]
-pub(crate) fn assert_eq_parse_error<'a, P, TokenCtor, Output>(
-    input: &'a str,
-    parser: P,
+#[derive(Debug)]
+pub(crate) struct SingleError<'input, TokenCtor>
+where
+    TokenCtor: TokenGen<'input>,
+{
     token_ctor: TokenCtor,
     expected_length: Option<usize>,
+    expected_pattern_contains: Option<&'input str>,
+}
+
+#[cfg(test)]
+pub(crate) trait TokenGen<'input> {
+    fn call(&self, input: &'input str) -> Token<'input>;
+}
+
+#[cfg(test)]
+impl<'input, F> TokenGen<'input> for F
+where
+    F: Fn(&'input str) -> Token<'input>,
+{
+    fn call(&self, input: &'input str) -> Token<'input> {
+        self(input)
+    }
+}
+
+#[cfg(test)]
+impl<'input> TokenGen<'input> for Token<'input> {
+    fn call(&self, _: &'input str) -> Token<'input> {
+        *self
+    }
+}
+
+#[cfg(test)]
+pub(crate) fn assert_eq_single_error<'input, TokenCtor>(
+    input_failed_at: &'input str,
+    expected: &SingleError<'input, TokenCtor>,
+    got: &ParseError,
 ) where
-    P: Fn(&'a str) -> ParseResult<'a, Output>,
-    TokenCtor: Fn(&'a str) -> Token,
+    TokenCtor: TokenGen<'input>,
+{
+    if let ParseError::Single {
+        failed_at,
+        expected_length,
+        expected_pattern,
+    } = got
+    {
+        assert_eq!(*failed_at, (expected.token_ctor).call(input_failed_at));
+        assert_eq!(*expected_length, expected.expected_length);
+        if let Some(pat) = expected.expected_pattern_contains {
+            assert!(
+                expected_pattern.contains(pat),
+                "'{expected_pattern}' doesn't contain '{pat}'"
+            )
+        }
+    } else {
+        let e = ParseError::Single {
+            failed_at: (expected.token_ctor).call(input_failed_at),
+            expected_length: expected.expected_length,
+            expected_pattern: format!("must contains '{:?}'", expected.expected_pattern_contains),
+        };
+        unreachable!(
+            "{}",
+            format!(
+                "expected a ParseError::Single({}), got a ParseError::Multiple({})",
+                e, got
+            )
+        );
+    }
+}
+
+#[cfg(test)]
+pub(crate) fn assert_eq_parse_error_single<'input, P, TokenCtor, Output>(
+    input: &'input str,
+    parser: P,
+    error: &SingleError<'input, TokenCtor>,
+) where
+    P: Fn(&'input str) -> ParseResult<'input, Output>,
+    TokenCtor: TokenGen<'input>,
     Output: std::fmt::Debug,
 {
-    assert_eq!(parser(input).unwrap_err().failed_at, token_ctor(input));
-    assert_eq!(parser(input).unwrap_err().expected_length, expected_length);
+    assert_eq_single_error(input, error, &parser(input).unwrap_err());
+}
+
+#[cfg(test)]
+pub(crate) fn assert_eq_parse_error_multiple<'input, P, F, Output>(
+    input: &'input str,
+    parser: P,
+    assert_fn: F,
+) where
+    P: Fn(&'input str) -> ParseResult<'input, Output>,
+    F: Fn(&Vec<ParseError<'input>>),
+    Output: std::fmt::Debug,
+{
+    if let ParseError::Multiple(m) = parser(input).unwrap_err() {
+        assert_fn(&m);
+    } else {
+        unreachable!("expected a ParseError::Multiple, got a ParseError::Single")
+    }
 }
 
 pub mod branch;
 pub mod chars;
-pub mod sequence;
 pub mod multi;
+pub mod sequence;
 
 #[doc = include_str!("../README.md")]
 #[cfg(doctest)]

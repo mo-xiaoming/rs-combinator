@@ -165,7 +165,11 @@ where
 pub fn take_until<'input, 'b>(boundary_seq: &'b str) -> impl Parser<'input, Token<'input>> + 'b {
     move |input: &'input str| match input.find(boundary_seq) {
         Some(i) => Ok((&input[i..], Token::TakeUntil(&input[..i]))),
-        None => Err(ParseError::new(Token::TakeUntil(input), boundary_seq.to_owned(), None)),
+        None => Err(ParseError::new(
+            Token::TakeUntil(input),
+            boundary_seq.to_owned(),
+            None,
+        )),
     }
 }
 
@@ -174,8 +178,9 @@ pub fn alpha1<'input>() -> impl Parser<'input, Token<'input>> {
         match_many1_chars(
             |c: char| !c.is_ascii_alphabetic(),
             Token::Alpha1,
-            || "any letters".to_owned(),
-        ).parse(input)
+            || "more than one letter".to_owned(),
+        )
+        .parse(input)
     }
 }
 
@@ -184,7 +189,7 @@ pub fn digit1<'input>() -> impl Parser<'input, Token<'input>> {
         match_many1_chars(
             |c: char| !c.is_ascii_digit(),
             Token::Digit1,
-            || "any digits".to_owned(),
+            || "more than one digit".to_owned(),
         )
         .parse(input)
     }
@@ -206,7 +211,7 @@ pub fn anychar<'input>() -> impl Parser<'input, Token<'input>> {
 
 #[cfg(test)]
 mod tests {
-    use crate::assert_eq_parse_error;
+    use crate::{assert_eq_parse_error_single, SingleError};
 
     use super::*;
 
@@ -216,9 +221,15 @@ mod tests {
 
         assert_eq!(a("abc"), Ok(("bc", Token::Char("a"))));
 
-        assert_eq_parse_error(" abc", a, Token::Char, Some(1));
+        let se = SingleError {
+            token_ctor: Token::Char,
+            expected_length: Some(1),
+            expected_pattern_contains: Some("a"),
+        };
 
-        assert_eq_parse_error("bc", a, Token::Char, Some(1));
+        assert_eq_parse_error_single(" abc", a, &se);
+
+        assert_eq_parse_error_single("bc", a, &se);
     }
 
     #[test]
@@ -239,9 +250,15 @@ mod tests {
 
         assert_eq!(hex("D15EA5E"), Ok(("", Token::IsA("D15EA5E"))));
 
-        assert_eq_parse_error("xD", hex, Token::IsA, None);
+        let se = SingleError {
+            token_ctor: Token::IsA,
+            expected_length: None,
+            expected_pattern_contains: Some("1234567890ABCDEF"),
+        };
 
-        assert_eq_parse_error("", hex, Token::IsA, None);
+        assert_eq_parse_error_single("xD", hex, &se);
+
+        assert_eq_parse_error_single("", hex, &se);
     }
 
     #[test]
@@ -260,27 +277,45 @@ mod tests {
 
         assert_eq!(not_space("Nospace"), Ok(("", Token::IsNot("Nospace"))));
 
-        assert_eq_parse_error(" N", not_space, Token::IsNot, None);
+        let se = SingleError {
+            token_ctor: Token::IsNot,
+            expected_length: None,
+            expected_pattern_contains: Some(" \t\r\n"),
+        };
 
-        assert_eq_parse_error("", not_space, Token::IsNot, None);
+        assert_eq_parse_error_single(" N", not_space, &se);
+
+        assert_eq_parse_error_single("", not_space, &se);
     }
 
     #[test]
     fn test_one_of() {
         assert_eq!(one_of("abc").parse("b"), Ok(("", Token::OneOf("b"))));
 
-        assert_eq_parse_error("bc", |s| one_of("a").parse(s), Token::OneOf, Some(1));
+        let se = SingleError {
+            token_ctor: Token::OneOf,
+            expected_length: Some(1),
+            expected_pattern_contains: Some("a"),
+        };
 
-        assert_eq_parse_error("", |s| one_of("a").parse(s), Token::OneOf, Some(1));
+        assert_eq_parse_error_single("bc", |s| one_of("a").parse(s), &se);
+
+        assert_eq_parse_error_single("", |s| one_of("a").parse(s), &se);
     }
 
     #[test]
     fn test_none_of() {
         assert_eq!(none_of("abc").parse("z"), Ok(("", Token::NoneOf("z"))));
 
-        assert_eq_parse_error("a", |s| none_of("ab").parse(s), Token::NoneOf, Some(1));
+        let se = SingleError {
+            token_ctor: Token::NoneOf,
+            expected_length: Some(1),
+            expected_pattern_contains: Some("ab"),
+        };
 
-        assert_eq_parse_error("", |s| none_of("ab").parse(s), Token::NoneOf, Some(1));
+        assert_eq_parse_error_single("a", |s| none_of("ab").parse(s), &se);
+
+        assert_eq_parse_error_single("", |s| none_of("ab").parse(s), &se);
     }
 
     #[test]
@@ -292,16 +327,19 @@ mod tests {
             Ok((", World!", Token::Tag("Hello")))
         );
 
-        assert_eq!(
-            hello("Something").unwrap_err().failed_at,
-            Token::Tag("Something")
-        );
+        let se = SingleError {
+            token_ctor: Token::Tag,
+            expected_length: Some(5),
+            expected_pattern_contains: Some("Hello"),
+        };
 
-        assert_eq_parse_error("less", hello, Token::Tag, Some(5));
+        assert_eq_parse_error_single("Something", hello, &se);
 
-        assert_eq_parse_error("Hell", hello, Token::Tag, Some(5));
+        assert_eq_parse_error_single("less", hello, &se);
 
-        assert_eq_parse_error("", hello, Token::Tag, Some(5));
+        assert_eq_parse_error_single("Hell", hello, &se);
+
+        assert_eq_parse_error_single("", hello, &se);
     }
 
     #[test]
@@ -323,13 +361,19 @@ mod tests {
             Ok((", World!", Token::TagNoCase("HeLlo")))
         );
 
-        assert_eq_parse_error("Something", hello, Token::TagNoCase, Some(5));
+        let se = SingleError {
+            token_ctor: Token::TagNoCase,
+            expected_length: Some(5),
+            expected_pattern_contains: Some("Hello"),
+        };
 
-        assert_eq_parse_error("less", hello, Token::TagNoCase, Some(5));
+        assert_eq_parse_error_single("Something", hello, &se);
 
-        assert_eq_parse_error("Hell", hello, Token::TagNoCase, Some(5));
+        assert_eq_parse_error_single("less", hello, &se);
 
-        assert_eq_parse_error("", hello, Token::TagNoCase, Some(5));
+        assert_eq_parse_error_single("Hell", hello, &se);
+
+        assert_eq_parse_error_single("", hello, &se);
     }
 
     #[test]
@@ -340,9 +384,15 @@ mod tests {
 
         assert_eq!(take6("things"), Ok(("", Token::Take("things"))));
 
-        assert_eq_parse_error("short", take6, Token::Take, Some(6));
+        let se = SingleError {
+            token_ctor: Token::Take,
+            expected_length: Some(6),
+            expected_pattern_contains: Some("6"),
+        };
 
-        assert_eq_parse_error("", take6, Token::Take, Some(6));
+        assert_eq_parse_error_single("short", take6, &se);
+
+        assert_eq_parse_error_single("", take6, &se);
     }
 
     #[test]
@@ -386,38 +436,62 @@ mod tests {
             Ok(("eof", Token::TakeUntil("hello, world")))
         );
 
-        assert_eq_parse_error("hello, world", until_eof, Token::TakeUntil, None);
-
-        assert_eq_parse_error("", until_eof, Token::TakeUntil, None);
+        let se = SingleError {
+            token_ctor: Token::TakeUntil,
+            expected_length: None,
+            expected_pattern_contains: Some("eof"),
+        };
 
         assert_eq!(
             until_eof("1eof2eof"),
             Ok(("eof2eof", Token::TakeUntil("1")))
         );
+
+        assert_eq_parse_error_single("hello, world", until_eof, &se);
+
+        assert_eq_parse_error_single("", until_eof, &se);
     }
 
     #[test]
     fn test_alpha1() {
         assert_eq!(alpha1().parse("aB1c"), Ok(("1c", Token::Alpha1("aB"))));
 
-        assert_eq_parse_error("1c", |s| alpha1().parse(s), Token::Alpha1, None);
+        let se = SingleError {
+            token_ctor: Token::Alpha1,
+            expected_length: None,
+            expected_pattern_contains: Some("more than one letter"),
+        };
 
-        assert_eq_parse_error("", |s| alpha1().parse(s), Token::Alpha1, None);
+        assert_eq_parse_error_single("1c", |s| alpha1().parse(s), &se);
+
+        assert_eq_parse_error_single("", |s| alpha1().parse(s), &se);
     }
 
     #[test]
     fn test_digit1() {
         assert_eq!(digit1().parse("21c"), Ok(("c", Token::Digit1("21"))));
 
-        assert_eq_parse_error("c1", |s| digit1().parse(s), Token::Digit1, None);
+        let se = SingleError {
+            token_ctor: Token::Digit1,
+            expected_length: None,
+            expected_pattern_contains: Some("more than one digit"),
+        };
 
-        assert_eq_parse_error("", |s| digit1().parse(s), Token::Digit1, None);
+        assert_eq_parse_error_single("c1", |s| digit1().parse(s), &se);
+
+        assert_eq_parse_error_single("", |s| digit1().parse(s), &se);
     }
 
     #[test]
     fn test_anychar() {
         assert_eq!(anychar().parse("abc"), Ok(("bc", Token::AnyChar("a"))));
 
-        assert_eq_parse_error("", |s| anychar().parse(s), Token::AnyChar, Some(1));
+        let se = SingleError {
+            token_ctor: Token::AnyChar,
+            expected_length: Some(1),
+            expected_pattern_contains: Some("a char"),
+        };
+
+        assert_eq_parse_error_single("", |s| anychar().parse(s), &se);
     }
 }

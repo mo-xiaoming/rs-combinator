@@ -107,9 +107,9 @@ pub fn tuple<'input, Output>(ps: impl Tuple<'input, Output>) -> impl Parser<'inp
 mod tests {
     use super::*;
     use crate::{
-        assert_eq_parse_error,
+        assert_eq_parse_error_single,
         chars::{alpha1, digit1, tag},
-        Token,
+        SingleError, Token,
     };
 
     #[test]
@@ -120,15 +120,29 @@ mod tests {
 
         assert_eq!(parser("(abc)def"), Ok(("def", Token::Tag("abc"))));
 
-        let e = parser("").unwrap_err();
-        assert_eq!(e.failed_at, Token::Tag(""),);
-        assert!(e.expected_pattern.contains('('));
-        assert_eq!(e.expected_length, Some(1));
+        let se = SingleError {
+            token_ctor: Token::Tag(""),
+            expected_length: Some(1),
+            expected_pattern_contains: Some("("),
+        };
 
-        let e = parser("123").unwrap_err();
-        assert_eq!(e.failed_at, Token::Tag("123"),);
-        assert!(e.expected_pattern.contains('('));
-        assert_eq!(e.expected_length, Some(1));
+        assert_eq_parse_error_single("", parser, &se);
+
+        let se = SingleError {
+            token_ctor: Token::Tag("123"),
+            expected_length: Some(1),
+            expected_pattern_contains: Some("("),
+        };
+
+        assert_eq_parse_error_single("123", parser, &se);
+
+        let se = SingleError {
+            token_ctor: Token::Tag(""),
+            expected_length: Some(1),
+            expected_pattern_contains: Some(")"),
+        };
+
+        assert_eq_parse_error_single("(abc", parser, &se);
     }
 
     #[test]
@@ -139,9 +153,29 @@ mod tests {
 
         assert_eq!(parser("abcefghij"), Ok(("ij", Token::Tag("efgh"))));
 
-        assert_eq_parse_error("", parser, Token::Tag, Some(3));
+        let se = SingleError {
+            token_ctor: Token::Tag(""),
+            expected_length: Some(3),
+            expected_pattern_contains: Some("abc"),
+        };
 
-        assert_eq_parse_error("123", parser, Token::Tag, Some(3));
+        assert_eq_parse_error_single("", parser, &se);
+
+        let se = SingleError {
+            token_ctor: Token::Tag("123"),
+            expected_length: Some(3),
+            expected_pattern_contains: Some("abc"),
+        };
+
+        assert_eq_parse_error_single("123", parser, &se);
+
+        let se = SingleError {
+            token_ctor: Token::Tag("123"),
+            expected_length: Some(4),
+            expected_pattern_contains: Some("efgh"),
+        };
+
+        assert_eq_parse_error_single("abc123", parser, &se);
     }
 
     #[test]
@@ -152,9 +186,29 @@ mod tests {
 
         assert_eq!(parser("abcefghij"), Ok(("ij", Token::Tag("abc"))));
 
-        assert_eq_parse_error("", parser, Token::Tag, Some(3));
+        let se = SingleError {
+            token_ctor: Token::Tag(""),
+            expected_length: Some(3),
+            expected_pattern_contains: Some("abc"),
+        };
 
-        assert_eq_parse_error("123", parser, Token::Tag, Some(3));
+        assert_eq_parse_error_single("", parser, &se);
+
+        let se = SingleError {
+            token_ctor: Token::Tag("123"),
+            expected_length: Some(3),
+            expected_pattern_contains: Some("abc"),
+        };
+
+        assert_eq_parse_error_single("123", parser, &se);
+
+        let se = SingleError {
+            token_ctor: Token::Tag("123"),
+            expected_length: Some(4),
+            expected_pattern_contains: Some("efgh"),
+        };
+
+        assert_eq_parse_error_single("abc123", parser, &se);
     }
 
     #[test]
@@ -171,9 +225,29 @@ mod tests {
             Ok(("ij", (Token::Tag("abc"), Token::Tag("efgh"))))
         );
 
-        assert_eq_parse_error("", parser, Token::Tag, Some(3));
+        let se = SingleError {
+            token_ctor: Token::Tag(""),
+            expected_length: Some(3),
+            expected_pattern_contains: Some("abc"),
+        };
 
-        assert_eq_parse_error("123", parser, Token::Tag, Some(3));
+        assert_eq_parse_error_single("", parser, &se);
+
+        let se = SingleError {
+            token_ctor: Token::Tag("123"),
+            expected_length: Some(3),
+            expected_pattern_contains: Some("abc"),
+        };
+
+        assert_eq_parse_error_single("123", parser, &se);
+
+        let se = SingleError {
+            token_ctor: Token::Tag("123"),
+            expected_length: Some(4),
+            expected_pattern_contains: Some("efgh"),
+        };
+
+        assert_eq_parse_error_single("abc123", parser, &se);
     }
 
     #[test]
@@ -190,9 +264,45 @@ mod tests {
             Ok(("ij", (Token::Tag("abc"), Token::Tag("efgh"))))
         );
 
-        assert_eq_parse_error("", parser, Token::Tag, Some(3));
+        let se = SingleError {
+            token_ctor: Token::Tag(""),
+            expected_length: Some(3),
+            expected_pattern_contains: Some("abc"),
+        };
 
-        assert_eq_parse_error("123", parser, Token::Tag, Some(3));
+        assert_eq_parse_error_single("", parser, &se);
+
+        let se = SingleError {
+            token_ctor: Token::Tag("123"),
+            expected_length: Some(3),
+            expected_pattern_contains: Some("abc"),
+        };
+
+        assert_eq_parse_error_single("123", parser, &se);
+
+        let se = SingleError {
+            token_ctor: Token::Tag(""),
+            expected_length: Some(1),
+            expected_pattern_contains: Some("|"),
+        };
+
+        assert_eq_parse_error_single("abc", parser, &se);
+
+        let se = SingleError {
+            token_ctor: Token::Tag(""),
+            expected_length: Some(4),
+            expected_pattern_contains: Some("efgh"),
+        };
+
+        assert_eq_parse_error_single("abc|", parser, &se);
+
+        let se = SingleError {
+            token_ctor: Token::Tag("123"),
+            expected_length: Some(4),
+            expected_pattern_contains: Some("efgh"),
+        };
+
+        assert_eq_parse_error_single("abc|123", parser, &se);
     }
 
     #[test]
@@ -211,8 +321,12 @@ mod tests {
             ))
         );
 
-        let e = parser("abc1234").unwrap_err();
-        assert_eq!(e.failed_at, Token::Alpha1(""));
-        assert_eq!(e.expected_length, None);
+        let se = SingleError {
+            token_ctor: Token::Alpha1(""),
+            expected_length: None,
+            expected_pattern_contains: Some("more than one letter"),
+        };
+
+        assert_eq_parse_error_single("abc1234", parser, &se);
     }
 }

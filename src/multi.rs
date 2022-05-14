@@ -71,7 +71,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{assert_eq_parse_error, chars::tag, Token};
+    use crate::{assert_eq_parse_error_single, chars::tag, SingleError, Token};
 
     #[test]
     fn test_count() {
@@ -87,17 +87,23 @@ mod tests {
             Ok(("abc", vec![Token::Tag("abc"), Token::Tag("abc")]))
         );
 
-        assert_eq_parse_error("", parser, Token::Tag, Some(3));
+        let se = SingleError {
+            token_ctor: Token::Tag,
+            expected_length: Some(3),
+            expected_pattern_contains: Some("abc"),
+        };
 
-        let e = parser("123123").unwrap_err();
-        assert_eq!(e.failed_at, Token::Tag("123123"));
-        assert_eq!(e.expected_pattern, "abc".to_owned());
-        assert_eq!(e.expected_length, Some(3));
+        assert_eq_parse_error_single("", parser, &se);
 
-        let e = parser("abc123").unwrap_err();
-        assert_eq!(e.failed_at, Token::Tag("123"));
-        assert_eq!(e.expected_pattern, "abc".to_owned());
-        assert_eq!(e.expected_length, Some(3));
+        assert_eq_parse_error_single("123123", parser, &se);
+
+        let se = SingleError {
+            token_ctor: Token::Tag("123"),
+            expected_length: Some(3),
+            expected_pattern_contains: Some("abc"),
+        };
+
+        assert_eq_parse_error_single("abc123", parser, &se);
     }
 
     #[test]
@@ -133,12 +139,15 @@ mod tests {
 
         assert_eq!(parser("abc123"), Ok(("123", vec![Token::Tag("abc")])));
 
-        let e = parser("123123").unwrap_err();
-        assert_eq!(e.failed_at, Token::Tag("123123"));
-        assert!(e.expected_pattern.contains("abc"));
-        assert_eq!(e.expected_length, Some(3));
+        let se = SingleError {
+            token_ctor: Token::Tag,
+            expected_length: Some(3),
+            expected_pattern_contains: Some("abc"),
+        };
 
-        assert_eq_parse_error("", parser, Token::Tag, Some(3));
+        assert_eq_parse_error_single("123123", parser, &se);
+
+        assert_eq_parse_error_single("", parser, &se);
     }
 
     #[test]
