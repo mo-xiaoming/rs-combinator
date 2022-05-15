@@ -4,6 +4,7 @@ pub trait Alt<'input, Output> {
     fn choice(&self, input: &'input str) -> ParseResult<'input, Output>;
 }
 
+// TODO: change this to macros
 impl<'input, Output, P1, P2> Alt<'input, Output> for (P1, P2)
 where
     P1: Parser<'input, Output>,

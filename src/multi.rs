@@ -1,4 +1,4 @@
-use crate::Parser;
+use crate::{ParseError, Parser};
 
 pub fn count<'input, Output, P>(parser: P, n: usize) -> impl Parser<'input, Vec<Output>>
 where
@@ -64,6 +64,42 @@ where
                     return Ok((cur_input, v));
                 }
             }
+        }
+    }
+}
+
+pub fn many_m_n<'input, Output, P>(
+    min: usize,
+    max: usize,
+    parser: P,
+) -> impl Parser<'input, Vec<Output>>
+where
+    P: Parser<'input, Output>,
+{
+    move |input: &'input str| {
+        let mut v = Vec::with_capacity(max - min);
+        let mut cur_input = input;
+        let mut last_error: Option<ParseError<'input>> = None;
+
+        for _ in 0..max {
+            match parser.parse(cur_input) {
+                Ok((next_input, r)) => {
+                    if cur_input.len() == next_input.len() {
+                        panic!("parsers accept empty inputs cannot be in many0");
+                    }
+                    cur_input = next_input;
+                    v.push(r);
+                }
+                Err(e) => {
+                    last_error = Some(e);
+                    break;
+                }
+            }
+        }
+        if v.len() < min && max != 0 {
+            Err(last_error.unwrap())
+        } else {
+            Ok((cur_input, v))
         }
     }
 }
@@ -158,5 +194,56 @@ mod tests {
     #[should_panic(expected = "empty inputs")]
     fn test_many1_panic_with_xxx0() {
         let _ = many1(tag("")).parse("abc");
+    }
+
+    #[test]
+    fn test_many_m_n() {
+        let parser = |input| many_m_n(0, 2, tag("abc")).parse(input);
+
+        assert_eq!(
+            parser("abcabc"),
+            Ok(("", vec![Token::Tag("abc"), Token::Tag("abc")]))
+        );
+
+        assert_eq!(parser("abc123"), Ok(("123", vec![Token::Tag("abc")])));
+
+        assert_eq!(parser("123123"), Ok(("123123", vec![])));
+
+        assert_eq!(parser(""), Ok(("", vec![])));
+
+        assert_eq!(
+            parser("abcabcabc"),
+            Ok(("abc", vec![Token::Tag("abc"), Token::Tag("abc")]))
+        );
+
+        let parser = |input| many_m_n(1, 2, tag("abc")).parse(input);
+
+        assert_eq!(
+            parser("abcabc"),
+            Ok(("", vec![Token::Tag("abc"), Token::Tag("abc")]))
+        );
+
+        assert_eq!(parser("abc123"), Ok(("123", vec![Token::Tag("abc")])));
+
+        let se = SingleError{
+            token_ctor: Token::Tag("123123"),
+            expected_length: Some(3),
+            expected_pattern_contains: Some("abc"),
+        };
+
+        assert_eq_parse_error_single("123123", parser, &se);
+
+        let se = SingleError{
+            token_ctor: Token::Tag(""),
+            expected_length: Some(3),
+            expected_pattern_contains: Some("abc"),
+        };
+
+        assert_eq_parse_error_single("", parser, &se);
+
+        assert_eq!(
+            parser("abcabcabc"),
+            Ok(("abc", vec![Token::Tag("abc"), Token::Tag("abc")]))
+        );
     }
 }
