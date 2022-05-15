@@ -4,6 +4,15 @@ pub trait Alt<'input, Output> {
     fn choice(&self, input: &'input str) -> ParseResult<'input, Output>;
 }
 
+macro_rules! one_parse {
+    ($self:expr, $input:expr, $idx:tt) => {
+        match $self.$idx.parse($input) {
+            a @ Ok(_) => return a,
+            Err(e) => e,
+        }
+    };
+}
+
 // TODO: change this to macros
 impl<'input, Output, P1, P2> Alt<'input, Output> for (P1, P2)
 where
@@ -12,17 +21,9 @@ where
     Output: std::fmt::Debug,
 {
     fn choice(&self, input: &'input str) -> ParseResult<'input, Output> {
-        let r1 = self.0.parse(input);
-        if let a @ Ok(_) = r1 {
-            return a;
-        }
-        let e1 = r1.unwrap_err();
-        let r2 = self.1.parse(input);
-        if let a @ Ok(_) = r2 {
-            return a;
-        }
-        let e2 = r2.unwrap_err();
-        Err(ParseError::Multiple(vec![e1, e2]))
+        let e0 = one_parse!(self, input, 0);
+        let e1 = one_parse!(self, input, 1);
+        Err(ParseError::Multiple(vec![e0, e1]))
     }
 }
 
@@ -34,22 +35,10 @@ where
     Output: std::fmt::Debug,
 {
     fn choice(&self, input: &'input str) -> ParseResult<'input, Output> {
-        let r1 = self.0.parse(input);
-        if let a @ Ok(_) = r1 {
-            return a;
-        }
-        let e1 = r1.unwrap_err();
-        let r2 = self.1.parse(input);
-        if let a @ Ok(_) = r2 {
-            return a;
-        }
-        let e2 = r2.unwrap_err();
-        let r3 = self.2.parse(input);
-        if let a @ Ok(_) = r3 {
-            return a;
-        }
-        let e3 = r3.unwrap_err();
-        Err(ParseError::Multiple(vec![e1, e2, e3]))
+        let e0 = one_parse!(self, input, 0);
+        let e1 = one_parse!(self, input, 1);
+        let e2 = one_parse!(self, input, 2);
+        Err(ParseError::Multiple(vec![e0, e1, e2]))
     }
 }
 
