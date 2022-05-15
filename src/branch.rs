@@ -124,9 +124,12 @@ pub fn permutation<'input, Output>(
 mod tests {
     use super::*;
     use crate::{
-        assert_eq_parse_error_multiple, assert_eq_parse_error_single, assert_eq_single_error,
         chars::{alpha1, anychar, char, digit1},
-        SingleError, Token,
+        tests::{
+            assert_eq_parse_error_multiple, assert_eq_parse_error_single, assert_eq_single_error,
+            SingleError,
+        },
+        Token,
     };
 
     #[test]

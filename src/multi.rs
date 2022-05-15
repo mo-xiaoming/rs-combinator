@@ -71,7 +71,11 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{assert_eq_parse_error_single, chars::tag, SingleError, Token};
+    use crate::{
+        chars::tag,
+        tests::{assert_eq_parse_error_single, SingleError},
+        Token,
+    };
 
     #[test]
     fn test_count() {

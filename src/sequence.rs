@@ -107,9 +107,9 @@ pub fn tuple<'input, Output>(ps: impl Tuple<'input, Output>) -> impl Parser<'inp
 mod tests {
     use super::*;
     use crate::{
-        assert_eq_parse_error_single,
         chars::{alpha1, digit1, tag},
-        SingleError, Token,
+        tests::{assert_eq_parse_error_single, SingleError},
+        Token,
     };
 
     #[test]

@@ -39,6 +39,7 @@ impl<'input> ParseError<'input> {
             expected_length,
         }
     }
+
     fn append(self, error: ParseError<'input>) -> Self {
         match self {
             a @ Self::Single { .. } => Self::Multiple(vec![a, error]),
@@ -117,103 +118,104 @@ where
 }
 
 #[cfg(test)]
-#[derive(Debug)]
-pub(crate) struct SingleError<'input, TokenCtor>
-where
-    TokenCtor: TokenGen<'input>,
-{
-    token_ctor: TokenCtor,
-    expected_length: Option<usize>,
-    expected_pattern_contains: Option<&'input str>,
-}
+mod tests {
+    use super::*;
 
-#[cfg(test)]
-pub(crate) trait TokenGen<'input> {
-    fn call(&self, input: &'input str) -> Token<'input>;
-}
-
-#[cfg(test)]
-impl<'input, F> TokenGen<'input> for F
-where
-    F: Fn(&'input str) -> Token<'input>,
-{
-    fn call(&self, input: &'input str) -> Token<'input> {
-        self(input)
-    }
-}
-
-#[cfg(test)]
-impl<'input> TokenGen<'input> for Token<'input> {
-    fn call(&self, _: &'input str) -> Token<'input> {
-        *self
-    }
-}
-
-#[cfg(test)]
-pub(crate) fn assert_eq_single_error<'input, TokenCtor>(
-    input_failed_at: &'input str,
-    expected: &SingleError<'input, TokenCtor>,
-    got: &ParseError,
-) where
-    TokenCtor: TokenGen<'input>,
-{
-    if let ParseError::Single {
-        failed_at,
-        expected_length,
-        expected_pattern,
-    } = got
+    #[derive(Debug)]
+    pub(crate) struct SingleError<'input, TokenCtor>
+    where
+        TokenCtor: TokenGen<'input>,
     {
-        assert_eq!(*failed_at, (expected.token_ctor).call(input_failed_at));
-        assert_eq!(*expected_length, expected.expected_length);
-        if let Some(pat) = expected.expected_pattern_contains {
-            assert!(
-                expected_pattern.contains(pat),
-                "'{expected_pattern}' doesn't contain '{pat}'"
-            )
-        }
-    } else {
-        let e = ParseError::Single {
-            failed_at: (expected.token_ctor).call(input_failed_at),
-            expected_length: expected.expected_length,
-            expected_pattern: format!("must contains '{:?}'", expected.expected_pattern_contains),
-        };
-        unreachable!(
-            "{}",
-            format!(
-                "expected a ParseError::Single({}), got a ParseError::Multiple({})",
-                e, got
-            )
-        );
+        pub(crate) token_ctor: TokenCtor,
+        pub(crate) expected_length: Option<usize>,
+        pub(crate) expected_pattern_contains: Option<&'input str>,
     }
-}
 
-#[cfg(test)]
-pub(crate) fn assert_eq_parse_error_single<'input, P, TokenCtor, Output>(
-    input: &'input str,
-    parser: P,
-    error: &SingleError<'input, TokenCtor>,
-) where
-    P: Fn(&'input str) -> ParseResult<'input, Output>,
-    TokenCtor: TokenGen<'input>,
-    Output: std::fmt::Debug,
-{
-    assert_eq_single_error(input, error, &parser(input).unwrap_err());
-}
+    pub(crate) trait TokenGen<'input> {
+        fn call(&self, input: &'input str) -> Token<'input>;
+    }
 
-#[cfg(test)]
-pub(crate) fn assert_eq_parse_error_multiple<'input, P, F, Output>(
-    input: &'input str,
-    parser: P,
-    assert_fn: F,
-) where
-    P: Fn(&'input str) -> ParseResult<'input, Output>,
-    F: Fn(&Vec<ParseError<'input>>),
-    Output: std::fmt::Debug,
-{
-    if let ParseError::Multiple(m) = parser(input).unwrap_err() {
-        assert_fn(&m);
-    } else {
-        unreachable!("expected a ParseError::Multiple, got a ParseError::Single")
+    impl<'input, F> TokenGen<'input> for F
+    where
+        F: Fn(&'input str) -> Token<'input>,
+    {
+        fn call(&self, input: &'input str) -> Token<'input> {
+            self(input)
+        }
+    }
+
+    impl<'input> TokenGen<'input> for Token<'input> {
+        fn call(&self, _: &'input str) -> Token<'input> {
+            *self
+        }
+    }
+
+    pub(crate) fn assert_eq_single_error<'input, TokenCtor>(
+        input_failed_at: &'input str,
+        expected: &SingleError<'input, TokenCtor>,
+        got: &ParseError,
+    ) where
+        TokenCtor: TokenGen<'input>,
+    {
+        if let ParseError::Single {
+            failed_at,
+            expected_length,
+            expected_pattern,
+        } = got
+        {
+            assert_eq!(*failed_at, (expected.token_ctor).call(input_failed_at));
+            assert_eq!(*expected_length, expected.expected_length);
+            if let Some(pat) = expected.expected_pattern_contains {
+                assert!(
+                    expected_pattern.contains(pat),
+                    "'{expected_pattern}' doesn't contain '{pat}'"
+                )
+            }
+        } else {
+            let e = ParseError::Single {
+                failed_at: (expected.token_ctor).call(input_failed_at),
+                expected_length: expected.expected_length,
+                expected_pattern: format!(
+                    "must contains '{:?}'",
+                    expected.expected_pattern_contains
+                ),
+            };
+            unreachable!(
+                "{}",
+                format!(
+                    "expected a ParseError::Single({}), got a ParseError::Multiple({})",
+                    e, got
+                )
+            );
+        }
+    }
+
+    pub(crate) fn assert_eq_parse_error_single<'input, P, TokenCtor, Output>(
+        input: &'input str,
+        parser: P,
+        error: &SingleError<'input, TokenCtor>,
+    ) where
+        P: Fn(&'input str) -> ParseResult<'input, Output>,
+        TokenCtor: TokenGen<'input>,
+        Output: std::fmt::Debug,
+    {
+        assert_eq_single_error(input, error, &parser(input).unwrap_err());
+    }
+
+    pub(crate) fn assert_eq_parse_error_multiple<'input, P, F, Output>(
+        input: &'input str,
+        parser: P,
+        assert_fn: F,
+    ) where
+        P: Fn(&'input str) -> ParseResult<'input, Output>,
+        F: Fn(&Vec<ParseError<'input>>),
+        Output: std::fmt::Debug,
+    {
+        if let ParseError::Multiple(m) = parser(input).unwrap_err() {
+            assert_fn(&m);
+        } else {
+            unreachable!("expected a ParseError::Multiple, got a ParseError::Single")
+        }
     }
 }
 

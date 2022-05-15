@@ -211,7 +211,7 @@ pub fn anychar<'input>() -> impl Parser<'input, Token<'input>> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{assert_eq_parse_error_single, SingleError};
+    use crate::tests::{assert_eq_parse_error_single, SingleError};
 
     use super::*;
 
