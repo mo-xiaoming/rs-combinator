@@ -54,8 +54,8 @@ impl<'input> ParseError<'input> {
 impl<'input> std::fmt::Display for ParseError<'input> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         macro_rules! f {
-            ($a:expr) => {
-                match self {
+            ($self:expr,$a:expr) => {
+                match $self {
                     ParseError::Single {
                         expected_pattern, ..
                     } => {
@@ -78,20 +78,20 @@ impl<'input> std::fmt::Display for ParseError<'input> {
                 ..
             } => {
                 let s = match failed_at {
-                    Token::Char(_) => f!("'{}'"),
-                    Token::IsA(_) => f!("till not one of \"{}\""),
-                    Token::IsNot(_) => f!("until one of \"{}\""),
-                    Token::OneOf(_) => f!("one of \"{}\""),
-                    Token::NoneOf(_) => f!("none of \"{}\""),
-                    Token::Tag(_) => f!("\"{}\""),
-                    Token::TagNoCase(_) => f!("case insensitive \"{}\""),
+                    Token::Char(_) => f!(self, "'{}'"),
+                    Token::IsA(_) => f!(self, "till not one of \"{}\""),
+                    Token::IsNot(_) => f!(self, "until one of \"{}\""),
+                    Token::OneOf(_) => f!(self, "one of \"{}\""),
+                    Token::NoneOf(_) => f!(self, "none of \"{}\""),
+                    Token::Tag(_) => f!(self, "\"{}\""),
+                    Token::TagNoCase(_) => f!(self, "case insensitive \"{}\""),
                     Token::Take(_) => format!("{} chars", expected_length.unwrap()),
-                    Token::TakeWhile(_) => f!("{}"),
-                    Token::TakeUntil(_) => f!("{}"),
-                    Token::TakeTill(_) => f!("{}"),
-                    Token::Alpha1(_) => f!("{}"),
-                    Token::Digit1(_) => f!("{}"),
-                    Token::AnyChar(_) => f!("{}"),
+                    Token::TakeWhile(_) => f!(self, "{}"),
+                    Token::TakeUntil(_) => f!(self, "{}"),
+                    Token::TakeTill(_) => f!(self, "{}"),
+                    Token::Alpha1(_) => f!(self, "{}"),
+                    Token::Digit1(_) => f!(self, "{}"),
+                    Token::AnyChar(_) => f!(self, "{}"),
                 };
                 write!(f, "{s}")
             }

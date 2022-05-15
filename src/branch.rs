@@ -22,7 +22,7 @@ where
             return a;
         }
         let e2 = r2.unwrap_err();
-        return Err(ParseError::Multiple(vec![e1, e2]));
+        Err(ParseError::Multiple(vec![e1, e2]))
     }
 }
 
@@ -49,7 +49,7 @@ where
             return a;
         }
         let e3 = r3.unwrap_err();
-        return Err(ParseError::Multiple(vec![e1, e2, e3]));
+        Err(ParseError::Multiple(vec![e1, e2, e3]))
     }
 }
 
