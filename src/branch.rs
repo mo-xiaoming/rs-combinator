@@ -14,7 +14,7 @@ macro_rules! one_parse {
 }
 
 macro_rules! choice_impl {
-    ($($parser:ident), +; $($idx:tt), +) => {
+    ($($parser:ident, $idx:tt), +) => {
         impl<'input, Output, $($parser), +> Alt<'input, Output> for ($($parser), +)
         where
             $($parser: Parser<'input, Output>), +,
@@ -27,8 +27,8 @@ macro_rules! choice_impl {
     };
 }
 
-choice_impl!(P1, P2; 0, 1);
-choice_impl!(P1, P2, P3; 0, 1, 2);
+choice_impl!(P0, 0, P1, 1);
+choice_impl!(P0, 0, P1, 1, P2, 2);
 
 pub fn alt<'input, Output>(ps: impl Alt<'input, Output>) -> impl Parser<'input, Output> {
     move |input: &'input str| ps.choice(input)
