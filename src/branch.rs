@@ -5,42 +5,30 @@ pub trait Alt<'input, Output> {
 }
 
 macro_rules! one_parse {
-    ($self:expr, $input:expr, $idx:tt) => {
-        match $self.$idx.parse($input) {
+    ($self_:ident, $input:expr, $idx:tt) => {
+        match $self_.$idx.parse($input) {
             a @ Ok(_) => return a,
             Err(e) => e,
         }
     };
 }
 
-// TODO: change this to macros
-impl<'input, Output, P1, P2> Alt<'input, Output> for (P1, P2)
-where
-    P1: Parser<'input, Output>,
-    P2: Parser<'input, Output>,
-    Output: std::fmt::Debug,
-{
-    fn choice(&self, input: &'input str) -> ParseResult<'input, Output> {
-        let e0 = one_parse!(self, input, 0);
-        let e1 = one_parse!(self, input, 1);
-        Err(ParseError::Multiple(vec![e0, e1]))
-    }
+macro_rules! choice_impl {
+    ($($parser:ident), +; $($idx:tt), +) => {
+        impl<'input, Output, $($parser), +> Alt<'input, Output> for ($($parser), +)
+        where
+            $($parser: Parser<'input, Output>), +,
+            Output: std::fmt::Debug,
+        {
+            fn choice(&self, input: &'input str) -> ParseResult<'input, Output> {
+                Err(ParseError::Multiple(vec![$(one_parse!(self, input, $idx)), +]))
+            }
+        }
+    };
 }
 
-impl<'input, Output, P1, P2, P3> Alt<'input, Output> for (P1, P2, P3)
-where
-    P1: Parser<'input, Output>,
-    P2: Parser<'input, Output>,
-    P3: Parser<'input, Output>,
-    Output: std::fmt::Debug,
-{
-    fn choice(&self, input: &'input str) -> ParseResult<'input, Output> {
-        let e0 = one_parse!(self, input, 0);
-        let e1 = one_parse!(self, input, 1);
-        let e2 = one_parse!(self, input, 2);
-        Err(ParseError::Multiple(vec![e0, e1, e2]))
-    }
-}
+choice_impl!(P1, P2; 0, 1);
+choice_impl!(P1, P2, P3; 0, 1, 2);
 
 pub fn alt<'input, Output>(ps: impl Alt<'input, Output>) -> impl Parser<'input, Output> {
     move |input: &'input str| ps.choice(input)
