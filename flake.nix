@@ -24,6 +24,9 @@
             pkgs.cargo-watch
             pkgs.cargo-modules
             pkgs.cargo-nextest
+            pkgs.cargo-audit
+            pkgs.cargo-tarpaulin
+            pkgs.cargo-expand
             #(fenix-rust.complete.withComponents [
             (fenix-rust.stable.withComponents [
               "cargo"

@@ -38,6 +38,39 @@ pub trait Permutation<'input, Output> {
     fn permutation(&self, input: &'input str) -> ParseResult<'input, Output>;
 }
 
+macro_rules! check_one {
+    ($self_:ident, $errs:ident, $res:ident, $idx:tt, $it:ident) => {
+        if $res[$idx].is_none() {
+            match $self_.$idx.parse($it) {
+                Ok((next_input, last_match)) => {
+                    $res[$idx] = Some(last_match);
+                    $it = next_input;
+                    continue;
+                }
+                Err(e) => {
+                    if $res.into_iter().filter(|o| o.is_none()).count() == 1 {
+                        return Err(e);
+                    }
+                    $errs[$idx] = Some(e);
+                }
+            }
+        }
+    };
+}
+
+macro_rules! check_all_some {
+    ($it:ident, $errs:ident, $res:ident, $($idx:tt), +) => {
+        if $errs.iter().all(Option::is_some) {
+            return Err(ParseError::Multiple(vec![
+                $($errs[$idx].take().unwrap()), +
+            ]));
+        }
+        if $res.iter().all(Option::is_some) {
+            return Ok(($it, ($($res[$idx].unwrap()), +)));
+        }
+    };
+}
+
 impl<'input, Output, P1, P2> Permutation<'input, (Output, Output)> for (P1, P2)
 where
     P1: Parser<'input, Output>,
@@ -49,49 +82,13 @@ where
         let mut res: [Option<Output>; 2] = [None, None];
         let mut errs: [Option<ParseError>; 2] = [None, None];
         loop {
-            if res[0].is_none() {
-                match self.0.parse(it) {
-                    Ok((next_input, last_match)) => {
-                        res[0] = Some(last_match);
-                        it = next_input;
-                        continue;
-                    }
-                    Err(e) => {
-                        if res[1].is_some() {
-                            return Err(e);
-                        }
-                        errs[0] = Some(e);
-                    }
-                }
-            }
-            if res[1].is_none() {
-                match self.1.parse(it) {
-                    Ok((next_input, last_match)) => {
-                        res[1] = Some(last_match);
-                        it = next_input;
-                        continue;
-                    }
-                    Err(e) => {
-                        if res[0].is_some() {
-                            return Err(e);
-                        }
-                        errs[1] = Some(e);
-                    }
-                }
-            }
-            if errs.iter().all(Option::is_some) {
-                return Err(ParseError::Multiple(vec![
-                    errs[0].take().unwrap(),
-                    errs[1].take().unwrap(),
-                ]));
-            }
-            if res.iter().all(Option::is_some) {
-                return Ok((it, (res[0].unwrap(), res[1].unwrap())));
-            }
+            check_one!(self, errs, res, 0, it);
+            check_one!(self, errs, res, 1, it);
+            check_all_some!(it, errs, res, 0, 1);
         }
     }
 }
-
+ 
 pub fn permutation<'input, Output>(
     ps: impl Permutation<'input, Output>,
 ) -> impl Parser<'input, Output> {
